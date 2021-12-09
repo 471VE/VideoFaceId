@@ -128,7 +128,7 @@ void my_track(std::string filename) {
     int keyboard = 0;
 
     cv::Mat full_frame, frame, frame_gray;
-    int scale = 5;
+    int scale = 2;
     double scale_inverse = 1. / static_cast<double>(scale);
 
     bool first_frame = true;
@@ -170,9 +170,16 @@ void my_track(std::string filename) {
         total_time_actual = std::chrono::duration_cast<ns>(frame_end - video_start).count() * 1e-6;
         total_time_predicted = frame_time * static_cast<double>(frame_count);
         if (total_time_actual > total_time_predicted) {
+            if (total_time_actual > total_time_predicted + 40) {
+                int access_frames = static_cast<int>((total_time_actual - total_time_predicted) / frame_time);
+                for (int i = 0; i < access_frames; ++i) {
+                    capture >> full_frame;
+                    frame_count++;
+                }
+            }
             keyboard = cv::waitKey(1);
         } else {
-            delay = cv::saturate_cast<uchar>(total_time_predicted - total_time_actual);
+            delay = cv::saturate_cast<uchar>(total_time_predicted - total_time_actual) + 1;
             keyboard = cv::waitKey(delay);
         }
 
