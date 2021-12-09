@@ -127,8 +127,8 @@ void my_track(std::string filename) {
     uchar delay;
     int keyboard = 0;
 
-    cv::Mat full_frame, frame, frame_gray;
-    int scale = 2;
+    cv::Mat full_frame, frame_gray;
+    int scale = 4;
     double scale_inverse = 1. / static_cast<double>(scale);
 
     bool first_frame = true;
@@ -138,10 +138,10 @@ void my_track(std::string filename) {
     while (true) {
 
         capture >> full_frame;
-        cv::resize(full_frame, frame, cv::Size(), scale_inverse, scale_inverse);
 
-        cv::Mat frame_gray;
-        cvtColor(frame, frame_gray, cv::COLOR_BGR2GRAY);
+        // ----- PROCESSING THE FRAME ----- //
+        cv::resize(full_frame, frame_gray, cv::Size(), scale_inverse, scale_inverse);
+        cvtColor(frame_gray, frame_gray, cv::COLOR_BGR2GRAY);
         cv::equalizeHist(frame_gray, frame_gray);
 
         std::vector<cv::Rect> faces;
@@ -156,6 +156,7 @@ void my_track(std::string filename) {
 
         imshow("Face Detection", full_frame);
 
+        // ----- PLAY VIDEO SOUND ----- //
         if (first_frame) {
             std::string mci_string = "open " + filename + " type mpegvideo alias AudioFile";
             LPCSTR mci_command = mci_string.c_str();
@@ -166,6 +167,7 @@ void my_track(std::string filename) {
             first_frame = false;
         }
 
+        // ----- SOUND SYNCING START ----- //
         frame_end = Time::now();
         total_time_actual = std::chrono::duration_cast<ns>(frame_end - video_start).count() * 1e-6;
         total_time_predicted = frame_time * static_cast<double>(frame_count);
@@ -182,6 +184,7 @@ void my_track(std::string filename) {
             delay = cv::saturate_cast<uchar>(total_time_predicted - total_time_actual) + 1;
             keyboard = cv::waitKey(delay);
         }
+        // ----- SOUND SYNCING END ----- //
 
         if (keyboard == 'q' || keyboard == 27)
             break;
