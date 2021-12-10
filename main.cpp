@@ -77,14 +77,6 @@ cv::VideoCapture capture;
 }*/
 
 
-void show(std::string window_name, cv::Mat img)
-{
-    cv::namedWindow(window_name, cv::WINDOW_AUTOSIZE);
-    cv::moveWindow(window_name, 700, 150);
-    cv::imshow(window_name, img);
-    cv::waitKey(0);
-};
-
 
 /*void haar_cascade(std::string img_path) {
     cv::CascadeClassifier face_cascade("haarcascade_frontalface_alt.xml");
@@ -119,12 +111,84 @@ void show(std::string window_name, cv::Mat img)
     show("Face detection", example_pic);
 }*/
 
+
+void RealTimeSyncing(
+    const Time::time_point& video_start,
+    Time::time_point& frame_end,
+    cv::VideoCapture& capture,
+    double& total_time_actual,
+    double& total_time_predicted,
+    const double& frame_time,
+    cv::Mat& full_frame,
+    int& frame_count,
+    uchar& wait_time,
+    int& keyboard)
+{
+    frame_end = Time::now();
+    total_time_actual = std::chrono::duration_cast<ns>(frame_end - video_start).count() * 1e-6;
+    total_time_predicted = frame_time * static_cast<double>(frame_count);
+    if (total_time_actual > total_time_predicted) {
+        if (total_time_actual > total_time_predicted + frame_time) {
+            // Skip frames if program runs too slow
+            int excess_frames = static_cast<int>((total_time_actual - total_time_predicted) / frame_time);
+            for (int i = 0; i < excess_frames; ++i) {
+                capture >> full_frame;
+                frame_count++;
+            }
+        }
+        // Immediately go to the next frame if delay is less than one frame or necesary frames have already been skipped
+        keyboard = cv::waitKey(1);
+    } else {
+        // Wait if processing is ahead of audio
+        wait_time = cv::saturate_cast<uchar>(total_time_predicted - total_time_actual) + 1;
+        keyboard = cv::waitKey(wait_time);
+    }
+}
+
+
+void StartAudioPlayback(const std::string& filename, Time::time_point& video_start, bool& first_frame) {
+    std::string mci_string = "open " + filename + " type mpegvideo alias AudioFile";
+    LPCSTR mci_command = mci_string.c_str();
+    mciSendString(mci_command, 0, 0, 0);
+    mciSendString("play AudioFile from 0", 0, 0, 0);
+    video_start = Time::now();
+    mciSendString("window AudioFile state hide", 0, 0, 0);
+    first_frame = false;
+}
+
+
 cv::CascadeClassifier face_cascade("../../../haarcascade/haarcascade_frontalface_alt.xml");
 
-void my_track(std::string filename) {
+void FrameProcessing(
+    cv::Mat& full_frame,
+    cv::Mat& frame_gray,
+    const double& scale_inverse,
+    const int& scale,
+    const int& frame_count)
+{
+    cv::resize(full_frame, frame_gray, cv::Size(), scale_inverse, scale_inverse);
+    cvtColor(frame_gray, frame_gray, cv::COLOR_BGR2GRAY);
+    cv::equalizeHist(frame_gray, frame_gray);
+
+    std::vector<cv::Rect> faces;
+    face_cascade.detectMultiScale(frame_gray, faces);
+
+    if (faces.size() > 0) {
+        for (size_t i = 0; i < faces.size(); i++) {
+            cv::rectangle(
+                full_frame, cv::Rect(
+                    faces[i].x*scale, faces[i].y*scale,
+                    faces[i].width*scale, faces[i].height*scale),
+                cv::Scalar(255, 0, 0), 2, 1);
+        }
+    }
+}
+
+
+void FaceRecognition(std::string filename) {
     double frame_time = 1000. / capture.get(cv::CAP_PROP_FPS);
     Time::time_point video_start, frame_end;
-    uchar delay;
+    uchar wait_time;
     int keyboard = 0;
 
     cv::Mat full_frame, frame_gray;
@@ -132,66 +196,27 @@ void my_track(std::string filename) {
     double scale_inverse = 1. / static_cast<double>(scale);
 
     bool first_frame = true;
-    int frame_count = 1;
+    int frame_count = 0;
     double total_time_actual, total_time_predicted;
 
     while (true) {
-
+        frame_count++;
         capture >> full_frame;
-
-        // ----- PROCESSING THE FRAME ----- //
-        cv::resize(full_frame, frame_gray, cv::Size(), scale_inverse, scale_inverse);
-        cvtColor(frame_gray, frame_gray, cv::COLOR_BGR2GRAY);
-        cv::equalizeHist(frame_gray, frame_gray);
-
-        std::vector<cv::Rect> faces;
-        face_cascade.detectMultiScale(frame_gray, faces);
-
-        if (faces.size() > 0) {
-            for (size_t i = 0; i < faces.size(); i++) {
-                cv::rectangle(full_frame, cv::Rect(faces[i].x*scale, faces[i].y*scale, faces[i].width*scale, faces[i].height*scale),
-                              cv::Scalar(255, 0, 0), 2, 1);
-            }
-        }
-
+        FrameProcessing(full_frame, frame_gray, scale_inverse, scale, frame_count);
         imshow("Face Detection", full_frame);
 
-        // ----- PLAY VIDEO SOUND ----- //
-        if (first_frame) {
-            std::string mci_string = "open " + filename + " type mpegvideo alias AudioFile";
-            LPCSTR mci_command = mci_string.c_str();
-            mciSendString(mci_command, 0, 0, 0);
-            mciSendString("play AudioFile from 0", 0, 0, 0);
-            video_start = Time::now();
-            mciSendString("window AudioFile state hide", 0, 0, 0);
-            first_frame = false;
-        }
+        if (first_frame)
+            StartAudioPlayback(filename, video_start, first_frame);
 
-        // ----- SOUND SYNCING START ----- //
-        frame_end = Time::now();
-        total_time_actual = std::chrono::duration_cast<ns>(frame_end - video_start).count() * 1e-6;
-        total_time_predicted = frame_time * static_cast<double>(frame_count);
-        if (total_time_actual > total_time_predicted) {
-            if (total_time_actual > total_time_predicted + 40) {
-                int access_frames = static_cast<int>((total_time_actual - total_time_predicted) / frame_time);
-                for (int i = 0; i < access_frames; ++i) {
-                    capture >> full_frame;
-                    frame_count++;
-                }
-            }
-            keyboard = cv::waitKey(1);
-        } else {
-            delay = cv::saturate_cast<uchar>(total_time_predicted - total_time_actual) + 1;
-            keyboard = cv::waitKey(delay);
-        }
-        // ----- SOUND SYNCING END ----- //
+        RealTimeSyncing(
+            video_start, frame_end, capture, total_time_actual, total_time_predicted,
+            frame_time, full_frame, frame_count, wait_time, keyboard);
 
         if (keyboard == 'q' || keyboard == 27)
             break;
-        
-        frame_count++;
     }
 }
+
 
 /*void face_track() {
     
@@ -239,6 +264,6 @@ void my_track(std::string filename) {
 int main() {
     std::string filename = "../../../test/ford_gosling.mp4";
     capture = cv::VideoCapture(filename);
-    my_track(filename);
+    FaceRecognition(filename);
     return 0;
 }
