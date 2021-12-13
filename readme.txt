@@ -1,1 +1,3 @@
-x64 architecture is required
+- work in progress
+
+- Windows operating system is required for audio playback

@@ -23,7 +23,7 @@
 #include <opencv2/tracking.hpp>
 #include <opencv2/videoio.hpp>
 #include <opencv2/video.hpp>
-#include <opencv2/tracking/tracking.hpp>
+#include <opencv2/tracking.hpp>
 
 #include <chrono>
 #include <time.h>
@@ -159,20 +159,21 @@ void StartAudioPlayback(const std::string& filename, Time::time_point& video_sta
 
 cv::CascadeClassifier face_cascade("../../../haarcascade/haarcascade_frontalface_alt.xml");
 
-void FrameProcessing(
+void FaceDetection(
     cv::Mat& full_frame,
     cv::Mat& frame_gray,
     const double& scale_inverse,
     const int& scale,
-    const int& frame_count)
+    std::vector<cv::Rect>& faces)
 {
     cv::resize(full_frame, frame_gray, cv::Size(), scale_inverse, scale_inverse);
     cvtColor(frame_gray, frame_gray, cv::COLOR_BGR2GRAY);
     cv::equalizeHist(frame_gray, frame_gray);
-
-    std::vector<cv::Rect> faces;
     face_cascade.detectMultiScale(frame_gray, faces);
+}
 
+
+void DrawFaces(cv::Mat full_frame, const std::vector<cv::Rect>& faces, const int& scale) {
     if (faces.size() > 0) {
         for (size_t i = 0; i < faces.size(); i++) {
             cv::rectangle(
@@ -183,6 +184,55 @@ void FrameProcessing(
         }
     }
 }
+
+cv::Ptr<cv::Tracker> ReturnTracker(const std::string& tracker_type) {
+    // These are all trackers present in non-legacy OpenCV 4.5.4
+    if (tracker_type == "MIL")
+        return cv::TrackerMIL::create();
+    else if (tracker_type == "KCF")
+        return cv::TrackerKCF::create();
+    else if (tracker_type == "GOTURN")
+        return cv::TrackerGOTURN::create();
+    else if (tracker_type == "CSRT")
+        return cv::TrackerCSRT::create();
+    else {
+        std::cout << "Unknown tracker type. Check if the tracker type is in the list of acceptable trackers and if there are any typos. Exiting...\n";
+        exit(1);
+    }
+}
+
+class MultiTracker {
+    public:
+        MultiTracker(const std::string& tracker_type) {
+            tracker_type_ = tracker_type;
+        };
+
+        void start(const cv::Mat& frame, const std::vector<cv::Rect>& faces) {
+            num_trackers_ = faces.size();
+            trackers_list_.clear();
+            trackers_list_.insert(
+                trackers_list_.end(),
+                num_trackers_,
+                ReturnTracker( tracker_type_));
+            for (size_t i = 0; i < num_trackers_; ++i) {
+                trackers_list_[i]->init(frame, faces[i]);
+            }
+        }
+
+        void update(const cv::Mat& frame, std::vector<cv::Rect>& faces) {
+            for (size_t i = 0; i < num_trackers_; ++i) {
+                if (trackers_list_[i]->update(frame, faces[i]))
+                    std::cout << "Success" << std::endl;
+                else
+                    std::cout << "Failure" << std::endl;
+            }
+        }
+
+    private:
+        std::vector<cv::Ptr<cv::Tracker>> trackers_list_;
+        std::string tracker_type_;
+        size_t num_trackers_;
+};
 
 
 void FaceRecognition(std::string filename) {
@@ -198,12 +248,27 @@ void FaceRecognition(std::string filename) {
     bool first_frame = true;
     int frame_count = 0;
     double total_time_actual, total_time_predicted;
+    std::vector<cv::Rect> faces;
+    MultiTracker trackers("KCF");
 
     while (true) {
-        frame_count++;
         capture >> full_frame;
-        FrameProcessing(full_frame, frame_gray, scale_inverse, scale, frame_count);
-        imshow("Face Detection", full_frame);
+        if (full_frame.empty())
+            break;
+        frame_count++;
+        std::cout << frame_count << std::endl;
+
+        if (frame_count % 10 == 1) {
+            faces.clear();
+            FaceDetection(full_frame, frame_gray, scale_inverse, scale, faces);
+            trackers.start(frame_gray, faces);
+        }
+        else {
+            trackers.update(frame_gray, faces);
+        }
+
+        DrawFaces(full_frame, faces, scale);
+        cv::imshow("Face Detection", full_frame);
 
         if (first_frame)
             StartAudioPlayback(filename, video_start, first_frame);
@@ -211,7 +276,6 @@ void FaceRecognition(std::string filename) {
         RealTimeSyncing(
             video_start, frame_end, capture, total_time_actual, total_time_predicted,
             frame_time, full_frame, frame_count, wait_time, keyboard);
-
         if (keyboard == 'q' || keyboard == 27)
             break;
     }
