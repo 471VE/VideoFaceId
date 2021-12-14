@@ -34,64 +34,7 @@ using ns = std::chrono::nanoseconds;
 
 cv::VideoCapture capture;
 
-/*void simple_track(){
-    // Types: "BOOSTING", "MIL", "KCF", "TLD","MEDIANFLOW", "GOTURN", "MOSSE", "CSRT" };
-    cv::Ptr<cv::Tracker> tracker = cv::TrackerKCF::create();
-
-    cv::Mat frame;
-    capture >> frame;
-    cv::Rect bbox(200, 170, 160, 150);
-    rectangle(frame, bbox, cv::Scalar(255, 0, 0), 2, 1);
-    std::string info;
-    int number_of_frames = 0;
-
-    tracker->init(frame, bbox);
-
-    while (true)
-    {
-        capture >> frame;
-        if (frame.empty())
-            break;
-
-        if (tracker->update(frame, bbox)) {
-            info = "(" + std::to_string(bbox.x) + ", " + std::to_string(bbox.y) + ", " + std::to_string(bbox.width)
-                   + ", " + std::to_string(bbox.height) + ")";
-            putText(frame, info, cv::Point(100, 80), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(0, 0, 255), 2);
-            rectangle(frame, bbox, cv::Scalar(255, 0, 0), 2, 1);
-            number_of_frames++;            
-        } else
-            putText(frame, "Tracking failure detected", cv::Point(100, 80), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(0, 0, 255), 2);
-
-        putText(frame, std::to_string(number_of_frames), cv::Point(100, 110), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(0, 0, 255), 2);
-        std::stringstream ss;
-        ss << capture.get(cv::CAP_PROP_POS_FRAMES);
-        
-        imshow("Tracking", frame);
-
-        int keyboard = cv::waitKey(30);
-        if (keyboard == 'q' || keyboard == 27)
-            break;
-    }
-    std::cout << number_of_frames << std::endl;
-    cv::waitKey();
-}*/
-
-
-
-/*void haar_cascade(std::string img_path) {
-    cv::CascadeClassifier face_cascade("haarcascade_frontalface_alt.xml");
-    cv::CascadeClassifier eyes_cascade("haarcascade_eye_tree_eyeglasses.xml");
-
-    cv::Mat example_pic = cv::imread(img_path);
-    cv::resize(example_pic, example_pic, cv::Size(), 0.25, 0.25);
-
-    cv::Mat frame_gray;
-    cvtColor(example_pic, frame_gray, cv::COLOR_BGR2GRAY);
-    cv::equalizeHist(frame_gray, frame_gray);
-
-    std::vector<cv::Rect> faces;
-    face_cascade.detectMultiScale(frame_gray, faces);
-
+/* EYES DETECTION
     for (size_t i = 0; i < faces.size(); i++)
     {
         cv::Point center(faces[i].x + faces[i].width / 2, faces[i].y + faces[i].height / 2);
@@ -107,9 +50,7 @@ cv::VideoCapture capture;
             circle(example_pic, eye_center, radius, cv::Scalar(255, 0, 0), 4);
         }
     }
-
-    show("Face detection", example_pic);
-}*/
+*/
 
 
 void RealTimeSyncing(
@@ -159,17 +100,10 @@ void StartAudioPlayback(const std::string& filename, Time::time_point& video_sta
 
 cv::CascadeClassifier face_cascade("../../../haarcascade/haarcascade_frontalface_alt.xml");
 
-void FaceDetection(
-    cv::Mat& full_frame,
-    cv::Mat& frame_gray,
-    const double& scale_inverse,
-    const int& scale,
-    std::vector<cv::Rect>& faces)
-{
+void Preprocessing(const cv::Mat& full_frame, cv::Mat& frame_gray, const double& scale_inverse) {
     cv::resize(full_frame, frame_gray, cv::Size(), scale_inverse, scale_inverse);
     cvtColor(frame_gray, frame_gray, cv::COLOR_BGR2GRAY);
     cv::equalizeHist(frame_gray, frame_gray);
-    face_cascade.detectMultiScale(frame_gray, faces);
 }
 
 
@@ -186,7 +120,7 @@ void DrawFaces(cv::Mat full_frame, const std::vector<cv::Rect>& faces, const int
 }
 
 cv::Ptr<cv::Tracker> ReturnTracker(const std::string& tracker_type) {
-    // These are all trackers present in non-legacy OpenCV 4.5.4
+    // These are all the trackers present in non-legacy OpenCV 4.5.4
     if (tracker_type == "MIL")
         return cv::TrackerMIL::create();
     else if (tracker_type == "KCF")
@@ -196,7 +130,8 @@ cv::Ptr<cv::Tracker> ReturnTracker(const std::string& tracker_type) {
     else if (tracker_type == "CSRT")
         return cv::TrackerCSRT::create();
     else {
-        std::cout << "Unknown tracker type. Check if the tracker type is in the list of acceptable trackers and if there are any typos. Exiting...\n";
+        std::cout << "Unknown tracker type.";
+        std::cout << "Check if the tracker type is in the list of acceptable trackers and if there are any typos. Exiting...\n";
         exit(1);
     }
 }
@@ -221,10 +156,7 @@ class MultiTracker {
 
         void update(const cv::Mat& frame, std::vector<cv::Rect>& faces) {
             for (size_t i = 0; i < num_trackers_; ++i) {
-                if (trackers_list_[i]->update(frame, faces[i]))
-                    std::cout << "Success" << std::endl;
-                else
-                    std::cout << "Failure" << std::endl;
+                trackers_list_[i]->update(frame, faces[i]);
             }
         }
 
@@ -249,24 +181,24 @@ void FaceRecognition(std::string filename) {
     int frame_count = 0;
     double total_time_actual, total_time_predicted;
     std::vector<cv::Rect> faces;
-    MultiTracker trackers("KCF");
+    MultiTracker trackers("CSRT");
 
     while (true) {
         capture >> full_frame;
         if (full_frame.empty())
             break;
         frame_count++;
-        std::cout << frame_count << std::endl;
+        
+        Preprocessing(full_frame, frame_gray, scale_inverse);
 
         if (frame_count % 10 == 1) {
-            faces.clear();
-            FaceDetection(full_frame, frame_gray, scale_inverse, scale, faces);
+            face_cascade.detectMultiScale(frame_gray, faces);
             trackers.start(frame_gray, faces);
         }
         else {
             trackers.update(frame_gray, faces);
         }
-
+        std::cout << faces.size() << std::endl;
         DrawFaces(full_frame, faces, scale);
         cv::imshow("Face Detection", full_frame);
 
@@ -281,49 +213,6 @@ void FaceRecognition(std::string filename) {
     }
 }
 
-
-/*void face_track() {
-    
-    cv::Ptr<cv::Tracker> tracker = cv::TrackerKCF::create();
-    cv::CascadeClassifier cascade("../../../haarcascade/haarcascade_frontalface_alt.xml");
-    cv::Rect face_rect;
-    cv::Mat ref, gray;
-
-    bool init_tracker = false;
-
-    while (true) {
-        capture >> ref;
-        cv::resize(ref, ref, cv::Size(), 0.25, 0.25);
-
-        if (!init_tracker) {
-            cvtColor(ref, gray, cv::COLOR_BGR2GRAY);
-            cv::equalizeHist(gray, gray);
-            std::vector<cv::Rect> faces;
-            cascade.detectMultiScale(gray, faces);
-
-            if (faces.size() == 0) {
-                putText(ref, "Cannot detect face", cv::Point(100, 80), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(0, 0, 255), 2);
-
-                if (!face_rect.empty()) {
-                    tracker->init(ref, face_rect);
-                    init_tracker = true;
-                }
-            }
-        }
-        else {
-            if (tracker->update(ref, face_rect))
-                rectangle(ref, face_rect, cv::Scalar(255, 0, 0), 2, 1);
-            else
-                putText(ref, "Tracking failure detected", cv::Point(100, 80), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(0, 0, 255), 2);
-        }
-
-        imshow("Frame", ref);
-
-        int keyboard = cv::waitKey(30);
-        if (keyboard == 'q' || keyboard == 27)
-            break;
-    }
-}*/
 
 int main() {
     std::string filename = "../../../test/ford_gosling.mp4";
