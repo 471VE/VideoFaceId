@@ -34,25 +34,6 @@ using ns = std::chrono::nanoseconds;
 
 cv::VideoCapture capture;
 
-/* EYES DETECTION
-    for (size_t i = 0; i < faces.size(); i++)
-    {
-        cv::Point center(faces[i].x + faces[i].width / 2, faces[i].y + faces[i].height / 2);
-        ellipse(example_pic, center, cv::Size(faces[i].width / 2, faces[i].height / 2), 0, 0, 360, cv::Scalar(255, 0, 255), 4);
-        cv::Mat faceROI = frame_gray(faces[i]);
-
-        std::vector<cv::Rect> eyes;
-        eyes_cascade.detectMultiScale(faceROI, eyes);
-        for (size_t j = 0; j < eyes.size(); j++)
-        {
-            cv::Point eye_center(faces[i].x + eyes[j].x + eyes[j].width / 2, faces[i].y + eyes[j].y + eyes[j].height / 2);
-            int radius = cvRound((eyes[j].width + eyes[j].height) * 0.25);
-            circle(example_pic, eye_center, radius, cv::Scalar(255, 0, 0), 4);
-        }
-    }
-*/
-
-
 void RealTimeSyncing(
     const Time::time_point& video_start,
     Time::time_point& frame_end,
@@ -125,12 +106,10 @@ cv::Ptr<cv::Tracker> ReturnTracker(const std::string& tracker_type) {
         return cv::TrackerMIL::create();
     else if (tracker_type == "KCF")
         return cv::TrackerKCF::create();
-    else if (tracker_type == "GOTURN")
-        return cv::TrackerGOTURN::create();
     else if (tracker_type == "CSRT")
         return cv::TrackerCSRT::create();
     else {
-        std::cout << "Unknown tracker type.";
+        std::cout << "Unknown tracker type. ";
         std::cout << "Check if the tracker type is in the list of acceptable trackers and if there are any typos. Exiting...\n";
         exit(1);
     }
@@ -148,7 +127,7 @@ class MultiTracker {
             trackers_list_.insert(
                 trackers_list_.end(),
                 num_trackers_,
-                ReturnTracker( tracker_type_));
+                ReturnTracker(tracker_type_));
             for (size_t i = 0; i < num_trackers_; ++i) {
                 trackers_list_[i]->init(frame, faces[i]);
             }
@@ -167,7 +146,7 @@ class MultiTracker {
 };
 
 
-void FaceRecognition(std::string filename) {
+void FaceRecognition(std::string filename, const std::string& tracker_type = "NO_TRACKER") {
     double frame_time = 1000. / capture.get(cv::CAP_PROP_FPS);
     Time::time_point video_start, frame_end;
     uchar wait_time;
@@ -181,7 +160,8 @@ void FaceRecognition(std::string filename) {
     int frame_count = 0;
     double total_time_actual, total_time_predicted;
     std::vector<cv::Rect> faces;
-    MultiTracker trackers("CSRT");
+
+    MultiTracker trackers(tracker_type);
 
     while (true) {
         capture >> full_frame;
@@ -191,14 +171,18 @@ void FaceRecognition(std::string filename) {
         
         Preprocessing(full_frame, frame_gray, scale_inverse);
 
-        if (frame_count % 10 == 1) {
+        if (tracker_type != "NO_TRACKER") {
+            if (frame_count % 10 == 1) {
+                face_cascade.detectMultiScale(frame_gray, faces);
+                trackers.start(frame_gray, faces);
+            }
+            else {
+                trackers.update(frame_gray, faces);
+            }
+        }
+        else
             face_cascade.detectMultiScale(frame_gray, faces);
-            trackers.start(frame_gray, faces);
-        }
-        else {
-            trackers.update(frame_gray, faces);
-        }
-        std::cout << faces.size() << std::endl;
+
         DrawFaces(full_frame, faces, scale);
         cv::imshow("Face Detection", full_frame);
 
