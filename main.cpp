@@ -1,28 +1,10 @@
 #include <vector>
 #include <iostream>
-#include <cstdlib>
-#include <fstream>
-#include <algorithm>
 #include <string>
 
-#include <opencv2/opencv.hpp>
-#include <opencv2/objdetect.hpp>
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/features2d.hpp>
-#include <opencv2/xfeatures2d.hpp>
-#include <opencv2/xfeatures2d/nonfree.hpp>
-#include <opencv2/calib3d.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/core/utility.hpp>
-#include <opencv2/core/ocl.hpp>
-#include "opencv2/imgcodecs.hpp"
-#include <opencv2/core/types.hpp>
-#include <opencv2/ml/ml.hpp>
+#include "MultiTracker.h"
 
-#include <opencv2/videoio.hpp>
-#include <opencv2/video.hpp>
-#include <opencv2/tracking.hpp>
+#include <opencv2/opencv.hpp>
 
 #include <chrono>
 #include <time.h>
@@ -81,7 +63,7 @@ void StartAudioPlayback(const std::string& filename, Time::time_point& video_sta
 cv::CascadeClassifier face_cascade("../../../haarcascade/haarcascade_frontalface_alt2.xml");
 
 void DrawFaces(cv::Mat full_frame, const std::vector<cv::Rect>& faces, const int& scale) {
-    cv::putText(full_frame, std::to_string(faces.size()), cv::Point(50,50), cv::FONT_HERSHEY_DUPLEX, 1, cv::Scalar(0,255,0), 4);
+    cv::putText(full_frame, "Faces: " + std::to_string(faces.size()), cv::Point(50,50), cv::FONT_HERSHEY_DUPLEX, 1, cv::Scalar(200,200,255), 2);
     for (const auto& face: faces) {
         cv::rectangle(
             full_frame, cv::Rect(
@@ -91,59 +73,6 @@ void DrawFaces(cv::Mat full_frame, const std::vector<cv::Rect>& faces, const int
             cv::waitKey(1);
     }
 }
-
-cv::Ptr<cv::Tracker> ReturnTracker(const std::string& tracker_type) {
-    // These are all the trackers present in OpenCV 4.5.4
-    if (tracker_type == "MIL")
-        return cv::TrackerMIL::create();
-    else if (tracker_type == "KCF")
-    {
-        cv::TrackerKCF::Params params;
-        params.desc_pca = cv::TrackerKCF::MODE::CN;
-        params.desc_npca = cv::TrackerKCF::MODE::GRAY;
-        return cv::TrackerKCF::create(params);
-    }
-    else if (tracker_type == "CSRT")
-        return cv::TrackerCSRT::create();
-    else {
-        std::cout << "Unknown tracker type. ";
-        std::cout << "Check if the tracker type is in the list of acceptable trackers and if there are any typos. Exiting...\n";
-        exit(1);
-    }
-}
-
-class MultiTracker {
-    public:
-        MultiTracker(const std::string& tracker_type) {
-            tracker_type_ = tracker_type;
-        };
-
-        void start(const cv::Mat& frame, const std::vector<cv::Rect>& faces) {
-            num_trackers_ = faces.size();
-            trackers_list_.clear();
-            trackers_list_.insert(
-                trackers_list_.end(),
-                num_trackers_,
-                ReturnTracker(tracker_type_));
-            for (size_t i = 0; i < num_trackers_; ++i) {
-                trackers_list_[i]->init(frame, faces[i]);
-            }
-        }
-
-        bool update(const cv::Mat& frame, std::vector<cv::Rect>& faces) {
-            for (size_t i = 0; i < num_trackers_; ++i) {
-                if (!trackers_list_[i]->update(frame, faces[i])) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-    private:
-        std::vector<cv::Ptr<cv::Tracker>> trackers_list_;
-        std::string tracker_type_;
-        size_t num_trackers_;
-};
 
 
 void FaceRecognition(std::string filename, const std::string& tracker_type = "NO_TRACKER") {
@@ -162,7 +91,7 @@ void FaceRecognition(std::string filename, const std::string& tracker_type = "NO
 
     std::vector<cv::Rect> faces;
 
-    MultiTracker trackers(tracker_type);
+    MultiTracker trackers = MultiTracker(tracker_type);
 
     while (true) {
         capture >> full_frame;
