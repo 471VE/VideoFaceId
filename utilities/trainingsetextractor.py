@@ -11,6 +11,9 @@ class IncorrectNumberOfArguments(Exception):
 class NoDirectory(Exception):
     pass
 
+class UnacceptableFeatureExtractorType(Exception):
+    pass
+
 def square_params(x_initial, x, y_initial, y):
     side = abs(y_initial - y)
     
@@ -24,16 +27,38 @@ def square_params(x_initial, x, y_initial, y):
 
 def descriptor_filename(image_filename, type):
     path = image_filename.split("\\")
+    
     if type == "SIFT":
+        if not isdir(f"{directory}\\descriptors\\SIFT"):
+            makedirs(f"{directory}\\descriptors\\SIFT")
         path[-1] =  f"descriptors\\SIFT\\{path[-1][:-4]}_descriptor_SIFT.png"
+        
     elif type == "HoG":
+        if not isdir(f"{directory}\\descriptors\\HoG"):
+            makedirs(f"{directory}\\descriptors\\HoG")
         path[-1] =  f"descriptors\\HoG\\{path[-1][:-4]}_descriptor_HoG.txt"
+        
     return "\\".join(path)
+
+def save_descriptor(image_name, face, type):
+    if type == "SIFT":
+        sift = cv2.SIFT_create()
+        _, descriptors = sift.detectAndCompute(face, None)            
+        cv2.imwrite(descriptor_filename(image_name, type), descriptors)
+        
+    elif type == "HoG":
+        hog = cv2.HOGDescriptor()
+        descriptors = hog.compute(face)
+        with open(descriptor_filename(image_name, type), 'w') as txt_file:
+            txt_file.write("\n".join(map(str, descriptors)))
+            
+    else:
+        raise UnacceptableFeatureExtractorType("Unacepptable feature extractor type.")
 
 if __name__ == "__main__":
     
-    if len(argv) != 2:
-        raise IncorrectNumberOfArguments('The path to images must be specified.')
+    if len(argv) != 3:
+        raise IncorrectNumberOfArguments('The path to images and feature extractor type must be specified.')
     
     directory = argv[1]
     if not isdir(directory):
@@ -69,7 +94,7 @@ if __name__ == "__main__":
                 
             if event == cv2.EVENT_LBUTTONDOWN:
                 if already_drawn:
-                    cv2.putText(image, 'There must ne only one face', (50, 50),
+                    cv2.putText(image, 'There must be only one face', (50, 50),
                                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
                 else:
                     is_drawing = True
@@ -78,7 +103,7 @@ if __name__ == "__main__":
                 
             elif event == cv2.EVENT_LBUTTONUP:
                 if already_drawn:
-                    cv2.putText(image, 'There must ne only one face', (50, 50),
+                    cv2.putText(image, 'There must be only one face', (50, 50),
                                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
                 else:
                     is_drawing = False
@@ -101,20 +126,7 @@ if __name__ == "__main__":
                 break
         
         if already_drawn:
-            face = cache[top_corner[1]:bottom_corner[1], top_corner[0]:bottom_corner[0], :]
-            
-            sift = cv2.SIFT_create()
-            _, descriptors = sift.detectAndCompute(face, None)
-            
-            if not isdir(f"{directory}\\descriptors"):
-                makedirs(f"{directory}\\descriptors\\SIFT")
-                makedirs(f"{directory}\\descriptors\\HoG")
-                
-            cv2.imwrite(descriptor_filename(image_name, "SIFT"), descriptors)
-            
-            hog = cv2.HOGDescriptor()
-            descriptors = hog.compute(face)
-            with open(descriptor_filename(image_name, "HoG"), 'w') as txt_file:
-                txt_file.write("\n".join(map(str, descriptors)))
+            face = cache[top_corner[1]:bottom_corner[1], top_corner[0]:bottom_corner[0], :]        
+            save_descriptor(image_name, face, argv[2])
         
         cv2.destroyAllWindows()
