@@ -63,7 +63,6 @@ void StartAudioPlayback(const std::string& filename, Time::time_point& video_sta
 cv::CascadeClassifier face_cascade("../../../haarcascade/haarcascade_frontalface_alt2.xml");
 
 void DrawFaces(cv::Mat full_frame, const std::vector<cv::Rect>& faces, const int& scale) {
-    cv::putText(full_frame, "Faces: " + std::to_string(faces.size()), cv::Point(50,50), cv::FONT_HERSHEY_DUPLEX, 1, cv::Scalar(200,200,255), 2);
     for (const auto& face: faces) {
         cv::rectangle(
             full_frame, cv::Rect(
@@ -90,7 +89,6 @@ void FaceRecognition(std::string filename, const std::string& tracker_type = "NO
     double total_time_actual, total_time_predicted;
 
     std::vector<cv::Rect> faces;
-
     MultiTracker trackers = MultiTracker(tracker_type);
 
     while (true) {
@@ -136,10 +134,18 @@ void FaceRecognition(std::string filename, const std::string& tracker_type = "NO
     }
 }
 
+void ExtractFeatures(const cv::Mat& image, std::vector<cv::KeyPoint>& keypoints, cv::Mat& descriptors) {
+    auto detector = cv::SIFT::create();
+    detector->detectAndCompute(image, cv::Mat(), keypoints, descriptors);
+}
+
+
+
+
 
 int main() {
     std::string filename = "../../../test/ford_gosling.mp4";
     capture = cv::VideoCapture(filename);
-    FaceRecognition(filename, "KCF");
+    FaceRecognition(filename);
     return 0;
 }
