@@ -100,7 +100,7 @@ void DrawFaces(
 void FaceRecognition(
     std::string filename,
     const std::vector<std::string>& names,
-    cv::Ptr<cv::ml::SVM>& svm,
+    cv::Ptr<cv::ml::LogisticRegression>& classifier,
     const cv::Mat& k_centers,
     const std::string& tracker_type = "NO_TRACKER")
 {
@@ -160,7 +160,8 @@ void FaceRecognition(
                 full_frame(cv::Rect(face.x*scale, face.y*scale, face.width*scale, face.height*scale)),
                 cv::Mat(), person_keypoints_tmp, person_descriptors);
             cv::Mat dvector = FaceFeatureVector(person_descriptors, k_centers);
-            float prediction = svm->predict(dvector);
+            float prediction = classifier->predict(dvector);
+
             names_of_detected_faces.push_back(names[static_cast<size_t>(prediction)]);
         }
         
@@ -219,7 +220,7 @@ void LoadDatasetSIFT(
 
 void TrainPersonClassifier(
     const std::vector<std::string>& names, const std::string& dataset_path,
-    cv::Ptr<cv::ml::SVM>& svm, cv::Mat& k_centers)
+    cv::Ptr<cv::ml::LogisticRegression>& classifier, cv::Mat& k_centers)
 {
     cv::Mat all_descriptors;
     std::vector<cv::Mat> all_descriptors_by_image;
@@ -253,16 +254,17 @@ void TrainPersonClassifier(
         }
 
         input_data.push_back(feature_vector);
-        input_data_labels.push_back(cv::Mat(1, 1, CV_32SC1, all_classes_labels[i]));
+        input_data_labels.push_back(cv::Mat(1, 1, CV_32F, all_classes_labels[i]));
     }
 
-    svm->setType(cv::ml::SVM::C_SVC);
-    svm->setC(0.1);
-    svm->setKernel(cv::ml::SVM::LINEAR);
-    svm->setTermCriteria(cv::TermCriteria(cv::TermCriteria::MAX_ITER, (int)1e7, 1e-6));
+    //classifier->setLearningRate(0.001);
+    //classifier->setIterations(100);
+    //classifier->setRegularization(cv::ml::LogisticRegression::REG_L2);
+    //classifier->setTrainMethod(cv::ml::LogisticRegression::MINI_BATCH);
+    //classifier->setMiniBatchSize(100);
 
     cv::Ptr<cv::ml::TrainData> training_data = cv::ml::TrainData::create(input_data, cv::ml::ROW_SAMPLE, input_data_labels);
-    svm->train(training_data);
+    classifier->train(training_data);
 }
 
 
@@ -272,12 +274,12 @@ int main() {
 
     std::cout << "Training the model...\n";
     cv::Mat k_centers;
-    cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::create();
-    TrainPersonClassifier(names, dataset_path, svm, k_centers);
+    cv::Ptr<cv::ml::LogisticRegression> classifier = cv::ml::LogisticRegression::create();
+    TrainPersonClassifier(names, dataset_path, classifier, k_centers);
     std::cout << "Training complete.\n";
 
     std::string filename = "..\\..\\..\\test\\ford_gosling.mp4";
     capture = cv::VideoCapture(filename);
-    FaceRecognition(filename, names, svm, k_centers);
+    FaceRecognition(filename, names, classifier, k_centers);
     return 0;
 }
