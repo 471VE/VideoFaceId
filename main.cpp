@@ -15,9 +15,22 @@
 using Time = std::chrono::high_resolution_clock;
 using ns = std::chrono::nanoseconds;
 
-const double kDistanceCoef = 4.0;
-
 cv::VideoCapture capture;
+
+const int DICT_SIZE = 230;
+
+cv::Mat FaceFeatureVector(const cv::Mat& descriptors, const cv::Mat& k_centers) {
+    cv::BFMatcher matcher;
+    std::vector<cv::DMatch> matches;
+    matcher.match(descriptors, k_centers, matches);
+
+    cv::Mat feature_vector = cv::Mat::zeros(1, DICT_SIZE, CV_32F);
+    int index = 0;
+    for (auto j = matches.begin(); j < matches.end(); j++, index++) {
+        feature_vector.at<float>(0, matches.at(index).trainIdx) = feature_vector.at<float>(0, matches.at(index).trainIdx) + 1;
+    }
+    return feature_vector;
+}
 
 void RealTimeSyncing(
     const Time::time_point& video_start,
@@ -84,28 +97,11 @@ void DrawFaces(
     }
 }
 
-void match(const cv::Mat& desc1, const cv::Mat& desc2, std::vector<cv::DMatch>& good_matches) {
-    good_matches.clear();
-
-    cv::BFMatcher desc_matcher(cv::NORM_L2, false);
-    std::vector<std::vector<cv::DMatch>> vmatches;
-    desc_matcher.knnMatch(desc1, desc2, vmatches, 2);
-
-    for (int i = 0; i < static_cast<int>(vmatches.size()); ++i) {
-        if (!vmatches[i].size()) {
-            continue;
-        }
-        if (vmatches[i][0].distance < 0.75 * vmatches[i][1].distance)
-            good_matches.push_back(vmatches[i][0]);
-    }
-
-    std::sort(good_matches.begin(), good_matches.end());
-}
-
-
 void FaceRecognition(
     std::string filename,
-    std::vector<std::vector<cv::Mat>> dataset, const std::vector<std::string>& names,
+    const std::vector<std::string>& names,
+    cv::Ptr<cv::ml::SVM>& svm,
+    const cv::Mat& k_centers,
     const std::string& tracker_type = "NO_TRACKER")
 {
     double frame_time = 1000. / capture.get(cv::CAP_PROP_FPS);
@@ -127,16 +123,17 @@ void FaceRecognition(
     auto detector = cv::SIFT::create();
     std::vector<cv::KeyPoint> person_keypoints_tmp;
     cv::Mat person_descriptors;
-    std::vector<cv::DMatch> good_matches;
-    std::vector<std::pair<size_t, std::string>> good_matches_num;
     std::vector<std::string> names_of_detected_faces;
+
+    int cluster_count = DICT_SIZE;
+    int attempts = 5;
+    int iteration_number = static_cast<int>(1e4);
 
     while (true) {
         capture >> full_frame;
         if (full_frame.empty())
             break;
         frame_count++;
-
         cv::resize(full_frame, frame_downscaled, cv::Size(), scale_inverse, scale_inverse);
         cvtColor(frame_downscaled, frame_gray, cv::COLOR_BGR2GRAY);
 
@@ -161,15 +158,10 @@ void FaceRecognition(
         for (const auto& face: faces) {
             detector->detectAndCompute(
                 full_frame(cv::Rect(face.x*scale, face.y*scale, face.width*scale, face.height*scale)),
-                cv::Mat(), person_keypoints_tmp, person_descriptors);                
-            for (size_t i = 0; i < dataset.size(); ++i) {
-                for (const auto& true_descriptors: dataset[i]) {
-                    match(person_descriptors, true_descriptors, good_matches);
-                    good_matches_num.push_back(std::make_pair(good_matches.size(), names[i]));
-                }
-            }
-            std::sort(good_matches_num.begin(), good_matches_num.end(), std::greater<>());
-            names_of_detected_faces.push_back(good_matches_num[0].second);
+                cv::Mat(), person_keypoints_tmp, person_descriptors);
+            cv::Mat dvector = FaceFeatureVector(person_descriptors, k_centers);
+            float prediction = svm->predict(dvector);
+            names_of_detected_faces.push_back(names[static_cast<size_t>(prediction)]);
         }
         
         DrawFaces(full_frame, faces, scale, names_of_detected_faces);
@@ -180,6 +172,7 @@ void FaceRecognition(
             StartAudioPlayback(filename, video_start, first_frame);
         }
 
+        //cv::waitKey(0);
         RealTimeSyncing(
             video_start, frame_end, capture, total_time_actual, total_time_predicted,
             frame_time, full_frame, frame_count, wait_time, keyboard);
@@ -189,10 +182,6 @@ void FaceRecognition(
     }
 }
 
-void ExtractFeatures(const cv::Mat& image, std::vector<cv::KeyPoint>& keypoints, cv::Mat& descriptors) {
-    auto detector = cv::SIFT::create();
-    detector->detectAndCompute(image, cv::Mat(), keypoints, descriptors);
-}
 
 std::vector<std::string> GetDirectories(const std::string& path_to_dir) {
     std::vector<std::string> directories;
@@ -205,31 +194,90 @@ std::vector<std::string> GetDirectories(const std::string& path_to_dir) {
     return directories;
 }
 
-std::vector<std::vector<cv::Mat>> LoadDatasetSIFT(const std::vector<std::string>& names, const std::string& dataset_path) {
-    std::vector<cv::Mat> person_descriptors;
-    std::vector<std::vector<cv::Mat>> dataset;
-    for (const auto& name: names) {
-        person_descriptors.clear();
-        auto path_to_person_descriptors = dataset_path + "\\" + name + "\\descriptors\\SIFT";
+void LoadDatasetSIFT(
+    const std::vector<std::string>& names, const std::string& dataset_path,
+    cv::Mat& all_descriptors, std::vector<cv::Mat>& all_descriptors_by_image,
+    std::vector<int>& all_classes_labels, int& all_images_num)
+{
+    all_images_num = 0;
+    for (int i = 0; i < names.size(); ++i) {
+        auto path_to_person_descriptors = dataset_path + "\\" + names[i] + "\\descriptors\\SIFT";
+
         for(auto& descriptor_path: std::filesystem::directory_iterator(path_to_person_descriptors)) {
             auto tmp = cv::imread(descriptor_path.path().string(), cv::IMREAD_GRAYSCALE);
             cv::Mat_<float> tmp_float;
             tmp.convertTo(tmp_float, CV_32F);
-            person_descriptors.push_back(tmp_float);
+
+            all_descriptors.push_back(tmp_float);
+            all_descriptors_by_image.push_back(tmp_float);
+            all_classes_labels.push_back(i);
+            all_images_num++;
         }
-        dataset.push_back(person_descriptors);
     }
-    return dataset;
 }
 
+
+void TrainPersonClassifier(
+    const std::vector<std::string>& names, const std::string& dataset_path,
+    cv::Ptr<cv::ml::SVM>& svm, cv::Mat& k_centers)
+{
+    cv::Mat all_descriptors;
+    std::vector<cv::Mat> all_descriptors_by_image;
+    std::vector<int> all_classes_labels;
+    int all_images_num;
+
+    LoadDatasetSIFT(names, dataset_path, all_descriptors, all_descriptors_by_image, all_classes_labels, all_images_num);
+
+    int cluster_count = DICT_SIZE;
+    int attempts = 5;
+    int iteration_number = static_cast<int>(1e4);
+
+    cv::Mat k_labels;
+    kmeans(
+        all_descriptors, cluster_count, k_labels,
+        cv::TermCriteria(cv::TermCriteria::MAX_ITER | cv::TermCriteria::EPS, iteration_number, 1e-4),
+        attempts, cv::KMEANS_PP_CENTERS, k_centers);
+
+    cv::Mat input_data;
+    cv::Mat input_data_labels;
+
+    for (int i = 0; i < all_images_num; i++) {
+        cv::BFMatcher matcher;
+        std::vector<cv::DMatch> matches;
+        matcher.match(all_descriptors_by_image[i], k_centers, matches);
+
+        cv::Mat feature_vector = cv::Mat::zeros(1, DICT_SIZE, CV_32F);
+        int index = 0;
+        for (auto j = matches.begin(); j < matches.end(); j++, index++) {
+            feature_vector.at<float>(0, matches.at(index).trainIdx) = feature_vector.at<float>(0, matches.at(index).trainIdx) + 1;
+        }
+
+        input_data.push_back(feature_vector);
+        input_data_labels.push_back(cv::Mat(1, 1, CV_32SC1, all_classes_labels[i]));
+    }
+
+    svm->setType(cv::ml::SVM::C_SVC);
+    svm->setC(0.1);
+    svm->setKernel(cv::ml::SVM::LINEAR);
+    svm->setTermCriteria(cv::TermCriteria(cv::TermCriteria::MAX_ITER, (int)1e7, 1e-6));
+
+    cv::Ptr<cv::ml::TrainData> training_data = cv::ml::TrainData::create(input_data, cv::ml::ROW_SAMPLE, input_data_labels);
+    svm->train(training_data);
+}
 
 
 int main() {
     std::string dataset_path = "..\\..\\..\\training_set";
     auto names = GetDirectories(dataset_path);
-    auto dataset = LoadDatasetSIFT(names, dataset_path);
+
+    std::cout << "Training the model...\n";
+    cv::Mat k_centers;
+    cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::create();
+    TrainPersonClassifier(names, dataset_path, svm, k_centers);
+    std::cout << "Training complete.\n";
+
     std::string filename = "..\\..\\..\\test\\ford_gosling.mp4";
     capture = cv::VideoCapture(filename);
-    FaceRecognition(filename, dataset, names);
+    FaceRecognition(filename, names, svm, k_centers);
     return 0;
 }
