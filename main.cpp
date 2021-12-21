@@ -1,6 +1,7 @@
 #include <vector>
 #include <iostream>
 #include <string>
+#include <cmath>
 
 #include "MultiTracker.h"
 
@@ -17,7 +18,8 @@ using ns = std::chrono::nanoseconds;
 
 cv::VideoCapture capture;
 
-const int DICT_SIZE = 230;
+const int DICT_SIZE = 50;
+const double LOG_REG_THRESHOLD = 0.35;
 
 cv::Mat FaceFeatureVector(const cv::Mat& descriptors, const cv::Mat& k_centers) {
     cv::BFMatcher matcher;
@@ -97,6 +99,17 @@ void DrawFaces(
     }
 }
 
+void ComputeClassesProbabilities(cv::Mat& logit_mat) {
+    float sum = 0;
+    for (int i = 0; i < logit_mat.cols; ++i) {
+        logit_mat.at<float>(0, i) = exp(logit_mat.at<float>(0, i));
+        sum += logit_mat.at<float>(0, i);
+    }
+    for (int i = 0; i < logit_mat.cols; ++i) {
+        logit_mat.at<float>(0, i) /= sum;
+    }        
+}
+
 void FaceRecognition(
     std::string filename,
     const std::vector<std::string>& names,
@@ -124,10 +137,6 @@ void FaceRecognition(
     std::vector<cv::KeyPoint> person_keypoints_tmp;
     cv::Mat person_descriptors;
     std::vector<std::string> names_of_detected_faces;
-
-    int cluster_count = DICT_SIZE;
-    int attempts = 5;
-    int iteration_number = static_cast<int>(1e4);
 
     while (true) {
         capture >> full_frame;
@@ -159,10 +168,26 @@ void FaceRecognition(
             detector->detectAndCompute(
                 full_frame(cv::Rect(face.x*scale, face.y*scale, face.width*scale, face.height*scale)),
                 cv::Mat(), person_keypoints_tmp, person_descriptors);
-            cv::Mat dvector = FaceFeatureVector(person_descriptors, k_centers);
-            float prediction = classifier->predict(dvector);
+            cv::Mat feature_vector = FaceFeatureVector(person_descriptors, k_centers);
 
-            names_of_detected_faces.push_back(names[static_cast<size_t>(prediction)]);
+            cv::Mat feature_vector_added;
+            cv::hconcat(cv::Mat::ones(1, 1, CV_32F), feature_vector, feature_vector_added);
+            cv::Mat product = (classifier->get_learnt_thetas() * feature_vector_added.t()).t();
+            ComputeClassesProbabilities(product);
+
+            std::vector<float> probabilities;
+            probabilities.assign((float*)product.data, (float*)product.data + product.total()*product.channels());
+            std::vector<std::pair<float, size_t>> ordered_probabilities;
+            for (size_t i = 0; i < probabilities.size(); ++i) {
+                ordered_probabilities.push_back(std::make_pair(probabilities[i], i));
+            }
+
+            std::sort(ordered_probabilities.begin(), ordered_probabilities.end(), std::greater<>());
+
+            if (ordered_probabilities[0].first < ordered_probabilities[1].first + 0.02)
+                names_of_detected_faces.push_back("Unknown");
+            else
+                names_of_detected_faces.push_back(names[ordered_probabilities[0].second]);
         }
         
         DrawFaces(full_frame, faces, scale, names_of_detected_faces);
@@ -174,9 +199,11 @@ void FaceRecognition(
         }
 
         //cv::waitKey(0);
+        
         RealTimeSyncing(
             video_start, frame_end, capture, total_time_actual, total_time_predicted,
             frame_time, full_frame, frame_count, wait_time, keyboard);
+        
 
         if (keyboard == 'q' || keyboard == 27)
             break;
@@ -257,11 +284,11 @@ void TrainPersonClassifier(
         input_data_labels.push_back(cv::Mat(1, 1, CV_32F, all_classes_labels[i]));
     }
 
-    //classifier->setLearningRate(0.001);
-    //classifier->setIterations(100);
-    //classifier->setRegularization(cv::ml::LogisticRegression::REG_L2);
-    //classifier->setTrainMethod(cv::ml::LogisticRegression::MINI_BATCH);
-    //classifier->setMiniBatchSize(100);
+    classifier->setLearningRate(0.001);
+    classifier->setIterations(100);
+    classifier->setRegularization(cv::ml::LogisticRegression::REG_L2);
+    classifier->setTrainMethod(cv::ml::LogisticRegression::MINI_BATCH);
+    classifier->setMiniBatchSize(100);
 
     cv::Ptr<cv::ml::TrainData> training_data = cv::ml::TrainData::create(input_data, cv::ml::ROW_SAMPLE, input_data_labels);
     classifier->train(training_data);
