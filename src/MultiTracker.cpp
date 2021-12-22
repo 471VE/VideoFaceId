@@ -33,6 +33,7 @@ cv::Ptr<cv::Tracker> MultiTracker::ReturnTracker() {
     // These are all the trackers present in OpenCV 4.5.4
     if (tracker_type_ == "MIL")
         return cv::TrackerMIL::create();
+
     else if (tracker_type_ == "KCF")
     {
         cv::TrackerKCF::Params params;
@@ -40,8 +41,10 @@ cv::Ptr<cv::Tracker> MultiTracker::ReturnTracker() {
         params.desc_npca = cv::TrackerKCF::MODE::GRAY;
         return cv::TrackerKCF::create(params);
     }
+
     else if (tracker_type_ == "CSRT")
         return cv::TrackerCSRT::create();
+        
     else {
         std::cout << "Unknown tracker type. ";
         std::cout << "Check if the tracker type is in the list of acceptable trackers and if there are any typos. Exiting...\n";
