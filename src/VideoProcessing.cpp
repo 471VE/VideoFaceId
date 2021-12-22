@@ -113,6 +113,34 @@ void FaceIdentification(
 
 cv::CascadeClassifier face_cascade("../../../haarcascade/haarcascade_frontalface_alt2.xml");
 
+void TrackOrDetect(
+    const std::string& tracker_type,
+    const int& frame_count,
+    std::vector<cv::Rect>& faces,
+    const cv::Mat& frame_downscaled,
+    const cv::Mat& frame_gray,
+    MultiTracker& trackers,
+    bool& tracked)
+{
+    if (tracker_type != "NO_TRACKER") {
+        if (frame_count % 20 == 1 || faces.size() == 0) {
+            faces.clear();
+            face_cascade.detectMultiScale(frame_gray, faces);
+            trackers.start(frame_downscaled, faces);
+        }
+        else {
+            if (!trackers.update(frame_downscaled, faces)) {
+                faces.clear();
+                face_cascade.detectMultiScale(frame_gray, faces);
+                trackers.start(frame_downscaled, faces);
+            } else
+                tracked = true;
+        }
+    }
+    else
+        face_cascade.detectMultiScale(frame_downscaled, faces);
+}
+
 void FaceRecognition(
     const std::string& filename,
     const std::vector<std::string>& names,
@@ -158,24 +186,8 @@ void FaceRecognition(
         cvtColor(frame_downscaled, frame_gray, cv::COLOR_BGR2GRAY);
 
         tracked = false;
-        if (tracker_type != "NO_TRACKER") {
-            if (frame_count % 20 == 1 || faces.size() == 0) {
-                faces.clear();
-                face_cascade.detectMultiScale(frame_gray, faces);
-                trackers.start(frame_downscaled, faces);
-            }
-            else {
-                if (!trackers.update(frame_downscaled, faces)) {
-                    faces.clear();
-                    face_cascade.detectMultiScale(frame_gray, faces);
-                    trackers.start(frame_downscaled, faces);
-                } else
-                    tracked = true;
-            }
-        }
-        else
-            face_cascade.detectMultiScale(frame_downscaled, faces);
-
+        TrackOrDetect(tracker_type, frame_count, faces, frame_downscaled, frame_gray, trackers, tracked);
+        
         if (!tracked) {
             FaceIdentification(
                 names_of_detected_faces, names, faces, detector, full_frame, scale, person_keypoints_tmp, person_descriptors,
@@ -194,7 +206,6 @@ void FaceRecognition(
             video_start, frame_end, capture, total_time_actual, total_time_predicted,
             frame_time, full_frame, frame_count, wait_time, keyboard);
         
-
         if (keyboard == 'q' || keyboard == 27)
             break;
     }
