@@ -94,7 +94,7 @@ void DrawFaces(
                 faces[i].width*scale, faces[i].height*scale),
             cv::Scalar(0, 0, 255), 2, 1);
         cv::putText(
-            full_frame, names[i], cv::Point(faces[i].x * scale, faces[i].y * scale - 20),
+            full_frame, names[i], cv::Point(faces[i].x * scale, (faces[i].y + faces[i].height) * scale + 25),
             cv::FONT_HERSHEY_DUPLEX, 0.8, cv::Scalar(0, 0, 255), 2);
     }
 }
@@ -138,6 +138,8 @@ void FaceRecognition(
     cv::Mat person_descriptors;
     std::vector<std::string> names_of_detected_faces;
 
+    bool tracked;
+
     while (true) {
         capture >> full_frame;
         if (full_frame.empty())
@@ -146,6 +148,7 @@ void FaceRecognition(
         cv::resize(full_frame, frame_downscaled, cv::Size(), scale_inverse, scale_inverse);
         cvtColor(frame_downscaled, frame_gray, cv::COLOR_BGR2GRAY);
 
+        tracked = false;
         if (tracker_type != "NO_TRACKER") {
             if (frame_count % 20 == 1 || faces.size() == 0) {
                 faces.clear();
@@ -157,37 +160,40 @@ void FaceRecognition(
                     faces.clear();
                     face_cascade.detectMultiScale(frame_gray, faces);
                     trackers.start(frame_downscaled, faces);
-                }
+                } else
+                    tracked = true;
             }
         }
         else
             face_cascade.detectMultiScale(frame_downscaled, faces);
 
-        names_of_detected_faces.clear();
-        for (const auto& face: faces) {
-            detector->detectAndCompute(
-                full_frame(cv::Rect(face.x*scale, face.y*scale, face.width*scale, face.height*scale)),
-                cv::Mat(), person_keypoints_tmp, person_descriptors);
-            cv::Mat feature_vector = FaceFeatureVector(person_descriptors, k_centers);
+        if (!tracked) {
+            names_of_detected_faces.clear();
+            for (const auto& face: faces) {
+                detector->detectAndCompute(
+                    full_frame(cv::Rect(face.x*scale, face.y*scale, face.width*scale, face.height*scale)),
+                    cv::Mat(), person_keypoints_tmp, person_descriptors);
+                cv::Mat feature_vector = FaceFeatureVector(person_descriptors, k_centers);
 
-            cv::Mat feature_vector_added;
-            cv::hconcat(cv::Mat::ones(1, 1, CV_32F), feature_vector, feature_vector_added);
-            cv::Mat product = (classifier->get_learnt_thetas() * feature_vector_added.t()).t();
-            ComputeClassesProbabilities(product);
+                cv::Mat feature_vector_added;
+                cv::hconcat(cv::Mat::ones(1, 1, CV_32F), feature_vector, feature_vector_added);
+                cv::Mat product = (classifier->get_learnt_thetas() * feature_vector_added.t()).t();
+                ComputeClassesProbabilities(product);
 
-            std::vector<float> probabilities;
-            probabilities.assign((float*)product.data, (float*)product.data + product.total()*product.channels());
-            std::vector<std::pair<float, size_t>> ordered_probabilities;
-            for (size_t i = 0; i < probabilities.size(); ++i) {
-                ordered_probabilities.push_back(std::make_pair(probabilities[i], i));
+                std::vector<float> probabilities;
+                probabilities.assign((float*)product.data, (float*)product.data + product.total()*product.channels());
+                std::vector<std::pair<float, size_t>> ordered_probabilities;
+                for (size_t i = 0; i < probabilities.size(); ++i) {
+                    ordered_probabilities.push_back(std::make_pair(probabilities[i], i));
+                }
+
+                std::sort(ordered_probabilities.begin(), ordered_probabilities.end(), std::greater<>());
+
+                if (ordered_probabilities[0].first < ordered_probabilities[1].first + 0.02)
+                    names_of_detected_faces.push_back("Unknown");
+                else
+                    names_of_detected_faces.push_back(names[ordered_probabilities[0].second]);
             }
-
-            std::sort(ordered_probabilities.begin(), ordered_probabilities.end(), std::greater<>());
-
-            if (ordered_probabilities[0].first < ordered_probabilities[1].first + 0.02)
-                names_of_detected_faces.push_back("Unknown");
-            else
-                names_of_detected_faces.push_back(names[ordered_probabilities[0].second]);
         }
         
         DrawFaces(full_frame, faces, scale, names_of_detected_faces);
@@ -197,9 +203,7 @@ void FaceRecognition(
             first_frame = false;
             StartAudioPlayback(filename, video_start, first_frame);
         }
-
-        //cv::waitKey(0);
-        
+   
         RealTimeSyncing(
             video_start, frame_end, capture, total_time_actual, total_time_predicted,
             frame_time, full_frame, frame_count, wait_time, keyboard);
@@ -305,8 +309,8 @@ int main() {
     TrainPersonClassifier(names, dataset_path, classifier, k_centers);
     std::cout << "Training complete.\n";
 
-    std::string filename = "..\\..\\..\\test\\ford_gosling.mp4";
+    std::string filename = "..\\..\\..\\test\\bateman_interrogation_cut.mp4";
     capture = cv::VideoCapture(filename);
-    FaceRecognition(filename, names, classifier, k_centers);
+    FaceRecognition(filename, names, classifier, k_centers, "KCF");
     return 0;
 }
