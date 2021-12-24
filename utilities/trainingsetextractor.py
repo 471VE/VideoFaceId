@@ -25,40 +25,25 @@ def square_params(x_initial, x, y_initial, y):
     
     return (x_top, y_top), (x_bottom, y_bottom)
 
-def descriptor_filename(image_filename, type):
+def descriptor_filename(image_filename):
     path = image_filename.split("\\")
-    
-    if type == "SIFT":
-        if not isdir(f"{directory}\\descriptors\\SIFT"):
-            makedirs(f"{directory}\\descriptors\\SIFT")
-        path[-1] =  f"descriptors\\SIFT\\{path[-1][:-4]}_descriptor_SIFT.png"
-        
-    elif type == "HoG":
-        if not isdir(f"{directory}\\descriptors\\HoG"):
-            makedirs(f"{directory}\\descriptors\\HoG")
-        path[-1] =  f"descriptors\\HoG\\{path[-1][:-4]}_descriptor_HoG.txt"
+
+    if not isdir(f"{directory}\\descriptors\\SIFT"):
+        makedirs(f"{directory}\\descriptors\\SIFT")
+    path[-1] =  f"descriptors\\SIFT\\{path[-1][:-4]}_descriptor_SIFT.png"
         
     return "\\".join(path)
 
-def save_descriptor(image_name, face, type):
-    if type == "SIFT":
-        sift = cv2.SIFT_create()
-        _, descriptors = sift.detectAndCompute(face, None)            
-        cv2.imwrite(descriptor_filename(image_name, type), descriptors)
-        
-    elif type == "HoG":
-        hog = cv2.HOGDescriptor()
-        descriptors = hog.compute(face)
-        with open(descriptor_filename(image_name, type), 'w') as txt_file:
-            txt_file.write("\n".join(map(str, descriptors)))
-            
-    else:
-        raise UnacceptableFeatureExtractorType("Unacepptable feature extractor type.")
+def save_descriptor(image_name, face):
+    sift = cv2.SIFT_create()
+    _, descriptors = sift.detectAndCompute(face, None)            
+    cv2.imwrite(descriptor_filename(image_name), descriptors)
+
 
 if __name__ == "__main__":
     
-    if len(argv) != 3:
-        raise IncorrectNumberOfArguments('The path to images and feature extractor type must be specified.')
+    if len(argv) != 2:
+        raise IncorrectNumberOfArguments('Only the path to images must be specified.')
     
     directory = argv[1]
     if not isdir(directory):
@@ -127,6 +112,6 @@ if __name__ == "__main__":
         
         if already_drawn:
             face = cache[top_corner[1]:bottom_corner[1], top_corner[0]:bottom_corner[0], :]        
-            save_descriptor(image_name, face, argv[2])
+            save_descriptor(image_name, face)
         
         cv2.destroyAllWindows()

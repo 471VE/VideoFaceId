@@ -104,7 +104,7 @@ void FaceIdentification(
         feature_vector = FaceFeatureVector(person_descriptors, k_centers);
 
         cv::hconcat(cv::Mat::ones(1, 1, CV_32F), feature_vector, feature_vector_with_bias);
-        cv::Mat product = (classifier_params * feature_vector_with_bias.t()).t();
+        cv::Mat product = (- classifier_params * feature_vector_with_bias.t()).t();
         ComputeClassesProbabilities(product);
 
         probabilities.clear();
@@ -117,10 +117,14 @@ void FaceIdentification(
 
         std::sort(ordered_probabilities.begin(), ordered_probabilities.end(), std::greater<>());
 
-        if (ordered_probabilities[0].first < ordered_probabilities[1].first + 0.02)
+        if (ordered_probabilities[0].first < ordered_probabilities[1].first + 0.0001)
             names_of_detected_faces.push_back("Unknown");
         else
             names_of_detected_faces.push_back(names[ordered_probabilities[0].second]);
+        for (const auto& pair: probabilities) {
+            std::cout << pair << " ";
+        }
+        std::cout << std::endl;
     }
 }
 

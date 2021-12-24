@@ -6,7 +6,7 @@
 
 #include <opencv2/opencv.hpp>
 
-const int DICT_SIZE = 50;
+const int DICT_SIZE = 1000;
 
 std::vector<std::string> GetNames(const std::string& path_to_dir);
 
