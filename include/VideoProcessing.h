@@ -29,6 +29,7 @@ void RealTimeSyncing(
     int& keyboard);
 
 void StartAudioPlayback(const std::string& filename, Time::time_point& video_start, bool& first_frame);
+void StopAudioPlayback(const std::string& filename);
 
 void DrawFaces(
     cv::Mat full_frame,

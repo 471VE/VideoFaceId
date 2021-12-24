@@ -39,13 +39,26 @@ void RealTimeSyncing(
 
 
 void StartAudioPlayback(const std::string& filename, Time::time_point& video_start, bool& first_frame) {
-    std::string mci_string = "open " + filename + " type mpegvideo alias AudioFile";
-    LPCSTR mci_command = mci_string.c_str();
-    mciSendString(mci_command, 0, 0, 0);
-    mciSendString("play AudioFile from 0", 0, 0, 0);
+    std::string open_string = "open " + filename + " type mpegvideo";
+    LPCSTR open_command = open_string.c_str();
+
+    std::string play_string = "play " + filename + " from 0";
+    LPCSTR play_command = play_string.c_str();
+
+    std::string hide_string = "window " + filename + " state hide";
+    LPCSTR hide_command = hide_string.c_str();
+
+    mciSendString(open_command, 0, 0, 0);
+    mciSendString(play_command, 0, 0, 0);
     video_start = Time::now();
-    mciSendString("window AudioFile state hide", 0, 0, 0);
+    mciSendString(hide_command, 0, 0, 0);
     first_frame = false;
+}
+
+void StopAudioPlayback(const std::string& filename) {
+    std::string close_string = "close " + filename;
+    LPCSTR close_command = close_string.c_str();
+    mciSendString(close_command, 0, 0, 0);
 }
 
 
@@ -207,7 +220,9 @@ void FaceRecognition(
             video_start, frame_end, capture, total_time_actual, total_time_predicted,
             frame_time, full_frame, frame_count, wait_time, keyboard);
         
-        if (keyboard == 'q' || keyboard == 27)
+        if (keyboard == 'q' || keyboard == 27) {
+            StopAudioPlayback(filename);
             break;
+        }
     }
 }
