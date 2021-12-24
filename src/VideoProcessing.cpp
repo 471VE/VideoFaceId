@@ -81,7 +81,7 @@ void FaceIdentification(
     std::vector<float>& probabilities,
     std::vector<std::pair<float, size_t>>& ordered_probabilities,
     const cv::Mat& k_centers,
-    const cv::Ptr<cv::ml::LogisticRegression>& classifier)
+    const cv::Mat& classifier_params)
 {
     names_of_detected_faces.clear();
     for (const auto& face: faces) {
@@ -91,7 +91,7 @@ void FaceIdentification(
         feature_vector = FaceFeatureVector(person_descriptors, k_centers);
 
         cv::hconcat(cv::Mat::ones(1, 1, CV_32F), feature_vector, feature_vector_with_bias);
-        cv::Mat product = (classifier->get_learnt_thetas() * feature_vector_with_bias.t()).t();
+        cv::Mat product = (classifier_params * feature_vector_with_bias.t()).t();
         ComputeClassesProbabilities(product);
 
         probabilities.clear();
@@ -111,7 +111,7 @@ void FaceIdentification(
     }
 }
 
-cv::CascadeClassifier face_cascade("../../../haarcascade/haarcascade_frontalface_alt2.xml");
+cv::CascadeClassifier face_cascade("haarcascade/haarcascade_frontalface_alt2.xml");
 
 void TrackOrDetect(
     const std::string& tracker_type,
@@ -144,7 +144,7 @@ void TrackOrDetect(
 void FaceRecognition(
     const std::string& filename,
     const std::vector<std::string>& names,
-    const cv::Ptr<cv::ml::LogisticRegression>& classifier,
+    const cv::Mat& classifier_params,
     const cv::Mat& k_centers,
     cv::VideoCapture& capture,
     const std::string& tracker_type)
@@ -182,6 +182,7 @@ void FaceRecognition(
         if (full_frame.empty())
             break;
         frame_count++;
+
         cv::resize(full_frame, frame_downscaled, cv::Size(), scale_inverse, scale_inverse);
         cvtColor(frame_downscaled, frame_gray, cv::COLOR_BGR2GRAY);
 
@@ -191,9 +192,9 @@ void FaceRecognition(
         if (!tracked) {
             FaceIdentification(
                 names_of_detected_faces, names, faces, detector, full_frame, scale, person_keypoints_tmp, person_descriptors,
-                feature_vector, feature_vector_with_bias, probabilities, ordered_probabilities, k_centers, classifier);
+                feature_vector, feature_vector_with_bias, probabilities, ordered_probabilities, k_centers, classifier_params);
         }
-        
+
         DrawFaces(full_frame, faces, scale, names_of_detected_faces);
         cv::imshow("Face Detection", full_frame);
 

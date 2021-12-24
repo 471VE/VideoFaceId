@@ -9,6 +9,8 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "MultiTracker.h"
+
 const double LOG_REG_THRESHOLD = 0.35;
 
 using Time = std::chrono::high_resolution_clock;
@@ -48,12 +50,21 @@ void FaceIdentification(
     std::vector<float>& probabilities,
     std::vector<std::pair<float, size_t>>& ordered_probabilities,
     const cv::Mat& k_centers,
-    const cv::Ptr<cv::ml::LogisticRegression>& classifier);
+    const cv::Mat& classifier_params);
+
+void TrackOrDetect(
+    const std::string& tracker_type,
+    const int& frame_count,
+    std::vector<cv::Rect>& faces,
+    const cv::Mat& frame_downscaled,
+    const cv::Mat& frame_gray,
+    MultiTracker& trackers,
+    bool& tracked);
 
 void FaceRecognition(
     const std::string& filename,
     const std::vector<std::string>& names,
-    const cv::Ptr<cv::ml::LogisticRegression>& classifier,
+    const cv::Mat& classifier_params,
     const cv::Mat& k_centers,
     cv::VideoCapture& capture,
     const std::string& tracker_type = "KCF");
