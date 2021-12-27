@@ -1,8 +1,19 @@
 #include "VideoProcessing.h"
 #include "MultiTracker.h"
-#include "model.h"
 
 #include <Windows.h>
+#include <filesystem>
+
+std::vector<std::string> GetNames(const std::string& path_to_dir) {
+    std::vector<std::string> directories;
+    for(auto& element: std::filesystem::directory_iterator(path_to_dir))
+        if (element.is_directory()) {
+            std::string full_path = element.path().string();
+            std::string short_path = full_path.substr(full_path.find_last_of("\\") + 1, full_path.size());
+            directories.push_back(short_path);
+        }
+    return directories;
+}
 
 void RealTimeSyncing(
     const Time::time_point& video_start,
@@ -80,6 +91,24 @@ void DrawFaces(
     }
 }
 
+void match(const cv::Mat& desc1, const cv::Mat& desc2, std::vector<cv::DMatch>& good_matches) {
+    good_matches.clear();
+
+    cv::BFMatcher desc_matcher(cv::NORM_L2, false);
+    std::vector<std::vector<cv::DMatch>> vmatches;
+    desc_matcher.knnMatch(desc1, desc2, vmatches, 2);
+
+    for (int i = 0; i < static_cast<int>(vmatches.size()); ++i) {
+        if (!vmatches[i].size()) {
+            continue;
+        }
+        if (vmatches[i][0].distance < 0.75 * vmatches[i][1].distance)
+            good_matches.push_back(vmatches[i][0]);
+    }
+
+    std::sort(good_matches.begin(), good_matches.end());
+}
+
 void FaceIdentification(
     std::vector<std::string>& names_of_detected_faces,
     const std::vector<std::string>& names,
@@ -88,43 +117,25 @@ void FaceIdentification(
     const cv::Mat& full_frame,
     const int& scale,
     std::vector<cv::KeyPoint>& person_keypoints_tmp,
-    cv::Mat& person_descriptors,
-    cv::Mat& feature_vector,
-    cv::Mat& feature_vector_with_bias,
-    std::vector<float>& probabilities,
-    std::vector<std::pair<float, size_t>>& ordered_probabilities,
-    const cv::Mat& k_centers,
-    const cv::Mat& classifier_params)
+    cv::Mat& person_descriptors,    
+    std::vector<cv::DMatch>& good_matches,
+    std::vector<std::pair<size_t, std::string>>& good_matches_num,
+    const std::vector<std::vector<cv::Mat>>& dataset)
 {
     names_of_detected_faces.clear();
     for (const auto& face: faces) {
         detector->detectAndCompute(
             full_frame(cv::Rect(face.x*scale, face.y*scale, face.width*scale, face.height*scale)),
-            cv::Mat(), person_keypoints_tmp, person_descriptors);
-        feature_vector = FaceFeatureVector(person_descriptors, k_centers);
-
-        cv::hconcat(cv::Mat::ones(1, 1, CV_32F), feature_vector, feature_vector_with_bias);
-        cv::Mat product = (- classifier_params * feature_vector_with_bias.t()).t();
-        ComputeClassesProbabilities(product);
-
-        probabilities.clear();
-        ordered_probabilities.clear();
-        probabilities.assign((float*)product.data, (float*)product.data + product.total()*product.channels());
-
-        for (size_t i = 0; i < probabilities.size(); ++i) {
-            ordered_probabilities.push_back(std::make_pair(probabilities[i], i));
+            cv::Mat(), person_keypoints_tmp, person_descriptors);    
+        for (size_t i = 0; i < dataset.size(); ++i) {
+            for (const auto& true_descriptors: dataset[i]) {
+                match(person_descriptors, true_descriptors, good_matches);
+                good_matches_num.push_back(std::make_pair(good_matches.size(), names[i]));
+            }
         }
 
-        std::sort(ordered_probabilities.begin(), ordered_probabilities.end(), std::greater<>());
-
-        if (ordered_probabilities[0].first < ordered_probabilities[1].first + 0.0001)
-            names_of_detected_faces.push_back("Unknown");
-        else
-            names_of_detected_faces.push_back(names[ordered_probabilities[0].second]);
-        for (const auto& pair: probabilities) {
-            std::cout << pair << " ";
-        }
-        std::cout << std::endl;
+        std::sort(good_matches_num.begin(), good_matches_num.end(), std::greater<>());
+        names_of_detected_faces.push_back(good_matches_num[0].second);
     }
 }
 
@@ -158,12 +169,28 @@ void TrackOrDetect(
         face_cascade.detectMultiScale(frame_downscaled, faces);
 }
 
+std::vector<std::vector<cv::Mat>> LoadDataset(const std::vector<std::string>& names, const std::string& dataset_path) {
+    std::vector<cv::Mat> person_descriptors;
+    std::vector<std::vector<cv::Mat>> dataset;
+    cv::Mat_<float> tmp, tmp_float;
+    for (const auto& name: names) {
+        person_descriptors.clear();
+        auto path_to_person_descriptors = dataset_path + "\\" + name + "\\descriptors\\SIFT";
+        for(auto& descriptor_path: std::filesystem::directory_iterator(path_to_person_descriptors)) {
+            tmp = cv::imread(descriptor_path.path().string(), cv::IMREAD_GRAYSCALE);
+            tmp.convertTo(tmp_float, CV_32F);
+            person_descriptors.push_back(tmp_float);
+        }
+        dataset.push_back(person_descriptors);
+    }
+    return dataset;
+}
+
 void FaceRecognition(
     const std::string& filename,
     const std::vector<std::string>& names,
-    const cv::Mat& classifier_params,
-    const cv::Mat& k_centers,
     cv::VideoCapture& capture,
+    const std::vector<std::vector<cv::Mat>>& dataset,
     const std::string& tracker_type)
 {
     double frame_time = 1000. / capture.get(cv::CAP_PROP_FPS);
@@ -187,10 +214,8 @@ void FaceRecognition(
     cv::Mat person_descriptors;
     std::vector<std::string> names_of_detected_faces;
 
-    cv::Mat feature_vector;
-    cv::Mat feature_vector_with_bias;
-    std::vector<float> probabilities;
-    std::vector<std::pair<float, size_t>> ordered_probabilities;
+    std::vector<cv::DMatch> good_matches;
+    std::vector<std::pair<size_t, std::string>> good_matches_num;
 
     bool tracked;
 
@@ -208,8 +233,8 @@ void FaceRecognition(
         
         if (!tracked) {
             FaceIdentification(
-                names_of_detected_faces, names, faces, detector, full_frame, scale, person_keypoints_tmp, person_descriptors,
-                feature_vector, feature_vector_with_bias, probabilities, ordered_probabilities, k_centers, classifier_params);
+                names_of_detected_faces, names, faces, detector, full_frame, scale, 
+                person_keypoints_tmp, person_descriptors, good_matches, good_matches_num, dataset);
         }
 
         DrawFaces(full_frame, faces, scale, names_of_detected_faces);

@@ -11,10 +11,15 @@
 
 #include "MultiTracker.h"
 
-const double LOG_REG_THRESHOLD = 0.35;
-
 using Time = std::chrono::high_resolution_clock;
 using ns = std::chrono::nanoseconds;
+
+std::vector<std::string> GetNames(const std::string& path_to_dir);
+std::vector<std::vector<cv::Mat>> LoadDataset(const std::vector<std::string>& names, const std::string& dataset_path);
+void match(const cv::Mat& desc1, const cv::Mat& desc2, std::vector<cv::DMatch>& good_matches);
+
+void StartAudioPlayback(const std::string& filename, Time::time_point& video_start, bool& first_frame);
+void StopAudioPlayback(const std::string& filename);
 
 void RealTimeSyncing(
     const Time::time_point& video_start,
@@ -27,9 +32,6 @@ void RealTimeSyncing(
     int& frame_count,
     uchar& wait_time,
     int& keyboard);
-
-void StartAudioPlayback(const std::string& filename, Time::time_point& video_start, bool& first_frame);
-void StopAudioPlayback(const std::string& filename);
 
 void DrawFaces(
     cv::Mat full_frame,
@@ -45,13 +47,10 @@ void FaceIdentification(
     const cv::Mat& full_frame,
     const int& scale,
     std::vector<cv::KeyPoint>& person_keypoints_tmp,
-    cv::Mat& person_descriptors,
-    cv::Mat& feature_vector,
-    cv::Mat& feature_vector_with_bias,
-    std::vector<float>& probabilities,
-    std::vector<std::pair<float, size_t>>& ordered_probabilities,
-    const cv::Mat& k_centers,
-    const cv::Mat& classifier_params);
+    cv::Mat& person_descriptors,    
+    std::vector<cv::DMatch>& good_matches,
+    std::vector<std::pair<size_t, std::string>>& good_matches_num,
+    const std::vector<std::vector<cv::Mat>>& dataset);
 
 void TrackOrDetect(
     const std::string& tracker_type,
@@ -65,9 +64,8 @@ void TrackOrDetect(
 void FaceRecognition(
     const std::string& filename,
     const std::vector<std::string>& names,
-    const cv::Mat& classifier_params,
-    const cv::Mat& k_centers,
     cv::VideoCapture& capture,
+    const std::vector<std::vector<cv::Mat>>& dataset,
     const std::string& tracker_type = "KCF");
 
 #endif // VIDEO_PROCESSING_H
