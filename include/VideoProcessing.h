@@ -36,7 +36,7 @@ void RealTimeSyncing(
 void DrawFaces(
     cv::Mat full_frame,
     const std::vector<cv::Rect>& faces,
-    const int& scale,
+    const double& scale,
     const std::vector<std::string>& names);
 
 void FaceIdentification(
@@ -45,7 +45,7 @@ void FaceIdentification(
     const std::vector<cv::Rect>& faces,
     cv::Ptr<cv::SIFT>& detector,
     const cv::Mat& full_frame,
-    const int& scale,
+    const double& scale,
     std::vector<cv::KeyPoint>& person_keypoints_tmp,
     cv::Mat& person_descriptors,    
     std::vector<cv::DMatch>& good_matches,

@@ -76,17 +76,17 @@ void StopAudioPlayback(const std::string& filename) {
 void DrawFaces(
     cv::Mat full_frame,
     const std::vector<cv::Rect>& faces,
-    const int& scale,
+    const double& scale,
     const std::vector<std::string>& names)
 {
     for (int i = 0; i < faces.size(); ++i) {
         cv::rectangle(
-            full_frame, cv::Rect(
+            full_frame, cv::Rect2d(
                 faces[i].x*scale, faces[i].y*scale,
                 faces[i].width*scale, faces[i].height*scale),
             cv::Scalar(0, 0, 255), 2, 1);
         cv::putText(
-            full_frame, names[i], cv::Point(faces[i].x * scale, (faces[i].y + faces[i].height) * scale + 25),
+            full_frame, names[i], cv::Point2d(faces[i].x * scale, (faces[i].y + faces[i].height) * scale + 25),
             cv::FONT_HERSHEY_DUPLEX, 0.8, cv::Scalar(0, 0, 255), 2);
     }
 }
@@ -115,7 +115,7 @@ void FaceIdentification(
     const std::vector<cv::Rect>& faces,
     cv::Ptr<cv::SIFT>& detector,
     const cv::Mat& full_frame,
-    const int& scale,
+    const double& scale,
     std::vector<cv::KeyPoint>& person_keypoints_tmp,
     cv::Mat& person_descriptors,    
     std::vector<cv::DMatch>& good_matches,
@@ -125,7 +125,7 @@ void FaceIdentification(
     names_of_detected_faces.clear();
     for (const auto& face: faces) {
         detector->detectAndCompute(
-            full_frame(cv::Rect(face.x*scale, face.y*scale, face.width*scale, face.height*scale)),
+            full_frame(cv::Rect2d(face.x*scale, face.y*scale, face.width*scale, face.height*scale)),
             cv::Mat(), person_keypoints_tmp, person_descriptors);    
         for (size_t i = 0; i < dataset.size(); ++i) {
             for (const auto& true_descriptors: dataset[i]) {
@@ -199,7 +199,14 @@ void FaceRecognition(
     int keyboard = 0;
 
     cv::Mat full_frame, frame_downscaled, frame_gray;
-    int scale = 4;
+
+    double width = capture.get(cv::CAP_PROP_FRAME_WIDTH);
+    double height = capture.get(cv::CAP_PROP_FRAME_HEIGHT);
+
+    double new_width = 320;
+    double new_height = 180;
+
+    double scale = (((width/new_width) < (height/new_height)) ? (width/new_width) : (height/new_height));
     double scale_inverse = 1. / static_cast<double>(scale);
 
     bool first_frame = true;
@@ -238,7 +245,7 @@ void FaceRecognition(
         }
 
         DrawFaces(full_frame, faces, scale, names_of_detected_faces);
-        cv::imshow("Face Detection", full_frame);
+        cv::imshow("Face Recognition and Identification", full_frame);
 
         if (first_frame) {
             first_frame = false;
