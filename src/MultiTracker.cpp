@@ -22,9 +22,7 @@ void MultiTracker::start(const cv::Mat& frame, const std::vector<cv::Rect>& face
 
 bool MultiTracker::update(const cv::Mat& frame, std::vector<cv::Rect>& faces) {
     for (size_t i = 0; i < num_trackers_; ++i) {
-        if (!trackers_list_[i]->update(frame, faces[i])) {
-            return false;
-        }
+        if (!trackers_list_[i]->update(frame, faces[i])) return false;
     }
     return true;
 }
