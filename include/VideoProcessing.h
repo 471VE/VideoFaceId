@@ -68,4 +68,13 @@ void FaceRecognition(
     const std::vector<std::vector<cv::Mat>>& dataset,
     const std::string& tracker_type = "KCF");
 
+void LoadAnnotations(
+    const std::string& videoname,
+    std::vector<std::vector<cv::Rect>>& annotation_rectangles,
+    std::vector<std::vector<size_t>>& annotation_name_indices);
+
+double InetersectionOverUnion(const cv::Rect& rectangleA, const cv::Rect& rectangleB);
+
+bool AreTheSameFace(const cv::Rect& rectangleA, const cv::Rect& rectangleB);
+
 #endif // VIDEO_PROCESSING_H

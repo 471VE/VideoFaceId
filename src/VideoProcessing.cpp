@@ -1,11 +1,19 @@
 #include "VideoProcessing.h"
 #include "MultiTracker.h"
 
-#include <Windows.h>
+#include <fstream>
+#include <sstream>
 #include <filesystem>
+
+#ifdef _WIN32
+    #include <Windows.h>
+#endif
+
 
 const size_t SMALL_MATCHES_NUMBER = 15;
 const double GOOD_MATCH_RATIO = 0.75;
+
+const double IoU_THRESHOLD = 0.6;
 
 std::vector<std::string> GetNames(const std::string& path_to_dir) {
     std::vector<std::string> directories;
@@ -53,19 +61,22 @@ void RealTimeSyncing(
 
 
 void StartAudioPlayback(const std::string& filename, Time::time_point& video_start, bool& first_frame) {
-    std::string open_string = "open " + filename + " type mpegvideo";
-    LPCSTR open_command = open_string.c_str();
+    #ifdef _WIN32
+        std::string open_string = "open " + filename + " type mpegvideo";
+        LPCSTR open_command = open_string.c_str();
 
-    std::string play_string = "play " + filename + " from 0";
-    LPCSTR play_command = play_string.c_str();
+        std::string play_string = "play " + filename + " from 0";
+        LPCSTR play_command = play_string.c_str();
 
-    std::string hide_string = "window " + filename + " state hide";
-    LPCSTR hide_command = hide_string.c_str();
+        std::string hide_string = "window " + filename + " state hide";
+        LPCSTR hide_command = hide_string.c_str();
 
-    mciSendString(open_command, 0, 0, 0);
-    mciSendString(play_command, 0, 0, 0);
+        mciSendString(open_command, 0, 0, 0);
+        mciSendString(play_command, 0, 0, 0);
+        mciSendString(hide_command, 0, 0, 0);
+    #endif
+
     video_start = Time::now();
-    mciSendString(hide_command, 0, 0, 0);
     first_frame = false;
 }
 
@@ -265,4 +276,112 @@ void FaceRecognition(
             break;
         }
     }
+}
+
+void LoadAnnotationsSingleFile(
+    const std::string& videoname,
+    std::vector<std::vector<cv::Rect>>& annotation_rectangles,
+    std::vector<std::vector<bool>>& annotation_mask,
+    std::vector<int> name_indices)
+{
+    std::string short_name = videoname.substr(videoname.find_last_of("\\") + 1, videoname.find_last_of("."));
+    std::string annotation_folder = "test\\annotations\\" + short_name;
+    annotation_rectangles.clear();
+    annotation_mask.clear();
+    name_indices.clear();
+
+    std::vector<std::string> annotation_filenames;
+    std::vector<cv::Rect> rectangle_vector;
+
+    std::string file_line;
+    std::string parameter;
+
+    cv::Rect rectangle;
+    bool rectangle_exists;
+    std::vector<bool> rectangles_exist;
+    
+
+    for (auto& element: std::filesystem::directory_iterator(annotation_folder))
+        annotation_filenames.push_back(element.path().string());
+    
+    for (size_t i = 0; i < annotation_filenames.size(); ++i) {
+        std::ifstream annotation_file(annotation_filenames[i]);
+        std::getline(annotation_file, file_line);
+        name_indices.push_back(std::stoi(file_line));
+
+        while (std::getline(annotation_file, file_line)) {
+            std::istringstream input;
+            input.str(file_line);
+            if (!file_line.empty()) {
+                std::vector<int> square_params;
+                for (int i = 0; i < 3; ++i) {
+                    std::getline(input, parameter, ' ');
+                    square_params.push_back(std::stoi(parameter));
+                }
+                rectangle = cv::Rect(square_params[0], square_params[1], square_params[2], square_params[2]);
+                rectangle_exists = true;
+            } else {
+                rectangle = cv::Rect(0, 0, 0, 0);
+                rectangle_exists = false;
+            }
+            rectangles_exist.push_back(rectangle_exists);
+            rectangle_vector.push_back(rectangle);
+        }
+        annotation_file.close();
+        annotation_rectangles.push_back(rectangle_vector);
+        annotation_mask.push_back(rectangles_exist);
+    }
+}
+
+double InetersectionOverUnion(const cv::Rect& rectangleA, const cv::Rect& rectangleB) {
+    double rect_intersection = (rectangleA & rectangleB).area();
+    double rect_union = rectangleA.area() + rectangleB.area() - rect_intersection;
+    return rect_intersection / rect_union;
+}
+
+bool AreTheSameFace(const cv::Rect& rectangleA, const cv::Rect& rectangleB) {
+    double IoU = InetersectionOverUnion(rectangleA, rectangleB);
+    if (IoU > IoU_THRESHOLD) {
+        return true;
+    }
+    return false;
+}
+
+void FrameDetectedStatistics(
+    const std::vector<cv::Rect>& true_faces,
+    const std::vector<cv::Rect>& detected_faces,
+    int& true_positives,
+    int& false_positives,
+    int& false_negatives)
+{
+    int true_positive = 0;
+    int false_positive = static_cast<int>(detected_faces.size());
+    int false_negative = static_cast<int>(true_faces.size());
+    bool skip = false;
+
+    std::vector<cv::Rect> true_faces_copy = true_faces;
+
+    for (int i = 0; i < detected_faces.size(); ++i) {
+        for (int j = 0; j < true_faces_copy.size(); ++j) {
+            if (AreTheSameFace(true_faces_copy[j], detected_faces[i])) {
+                true_positive++;
+                false_negative--;
+                false_positive--;
+                true_faces_copy.erase(true_faces_copy.begin() + j);
+                skip = true;
+                break;
+            }
+        }
+        if (skip) {
+            skip = false;
+            continue;
+        }
+    }
+    true_positives += true_positive;
+    false_positives += false_positive;
+    false_negatives += false_negative;
+}
+
+void FrameClassStatistics() {
+    
 }

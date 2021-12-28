@@ -10,30 +10,20 @@ class IncorrectNumberOfArguments(Exception):
 
 
 def square_params(x_initial, x, y_initial, y):
-    side = abs(y_initial - y)
-    
+    side = abs(y_initial - y)    
     x_top = round(x - side/2)
-    x_bottom = round(x + side/2)
-    
+    x_bottom = round(x + side/2)    
     y_top = min(y_initial, y)
-    y_bottom = max(y_initial, y)
-    
+    y_bottom = max(y_initial, y)    
     return (x_top, y_top), (x_bottom, y_bottom), side
 
 
 def annotations_filename(video_name, person_name):
     path = video_name.split("\\")
-
     if not isdir(f"test\\annotations\\{path[-1][:-4]}"):
         makedirs(f"test\\annotations\\{path[-1][:-4]}")
     filename =  f"test\\annotations\\{path[-1][:-4]}\\annotation_{person_name}.txt"
-        
     return filename
-
-def draw_on_frame():
-    global exit_video, tracked, face_box, tracker
-    
-    
 
 
 if __name__ == "__main__":
