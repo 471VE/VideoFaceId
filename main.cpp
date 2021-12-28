@@ -36,33 +36,31 @@ int main(int argc, char* argv[]) {
     std::string dataset_path = "training_set";
     auto names = GetNames(dataset_path);
     auto dataset = LoadDataset(names, dataset_path);
+    names.push_back("Unknown");
 
     double true_positives = 0;
     double false_positives = 0;
     double false_negatives = 0;
 
+    std::vector<std::vector<double>> classes_statistics(3, std::vector<double>(names.size(), 0));
+
     if (single_video_flag) {
         video_path = "test\\" + video_name;
         capture = cv::VideoCapture(video_path);
-        FaceRecognition(video_path, names, capture, dataset, true_positives, false_positives, false_negatives);
+        FaceRecognition(video_path, names, capture, dataset, true_positives, false_positives, false_negatives, classes_statistics);
     } else {
         std::vector<std::string> directories;
         for(auto& video: std::filesystem::directory_iterator("test")) {
             if (!video.is_directory()) {
                 video_path = video.path().string();
                 capture = cv::VideoCapture(video_path);
-                FaceRecognition(video_path, names, capture, dataset, true_positives, false_positives, false_negatives);
+                FaceRecognition(video_path, names, capture, dataset, true_positives, false_positives, false_negatives, classes_statistics);
             }      
         }
     }
 
-    double precision = true_positives / (true_positives + false_positives);
-    double recall = true_positives / (true_positives + false_negatives);
-    double FNR = 1 - recall;
-
-    std::cout << "Precision: " << precision << ".\n";
-    std::cout << "Recall: " << recall << ".\n";
-    std::cout << "FNR: " << FNR << ".\n\n";
+    PrintDetectionStatistics(true_positives, false_positives, false_negatives);
+    PrintClassesStatistics(classes_statistics, names);
     
     return 0;
 }

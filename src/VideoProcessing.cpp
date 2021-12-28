@@ -9,11 +9,11 @@
     #include <Windows.h>
 #endif
 
-
-const size_t SMALL_MATCHES_NUMBER = 15;
 const double GOOD_MATCH_RATIO = 0.75;
+const size_t SMALL_MATCHES_NUMBER = 15;
 
 const double IoU_THRESHOLD = 0.3;
+
 
 std::vector<std::string> GetNames(const std::string& path_to_dir) {
     std::vector<std::string> directories;
@@ -25,6 +25,7 @@ std::vector<std::string> GetNames(const std::string& path_to_dir) {
         }
     return directories;
 }
+
 
 void RealTimeSyncing(
     const Time::time_point& video_start,
@@ -80,16 +81,19 @@ void StartAudioPlayback(const std::string& filename, Time::time_point& video_sta
     first_frame = false;
 }
 
+#ifdef _WIN32
 void StopAudioPlayback(const std::string& filename) {
     std::string close_string = "close " + filename;
     LPCSTR close_command = close_string.c_str();
     mciSendString(close_command, 0, 0, 0);
 }
+#endif
 
 
 void DrawFaces(
     cv::Mat full_frame,
     const std::vector<cv::Rect>& faces,
+    const std::vector<size_t> name_indices_of_detected_faces,
     const std::vector<std::string>& names)
 {
     for (int i = 0; i < faces.size(); ++i) {
@@ -97,10 +101,11 @@ void DrawFaces(
             full_frame, faces[i],
             cv::Scalar(0, 0, 255), 2, 1);
         cv::putText(
-            full_frame, names[i], cv::Point2d(faces[i].x, (faces[i].y + faces[i].height) + 25),
+            full_frame, names[name_indices_of_detected_faces[i]], cv::Point2d(faces[i].x, (faces[i].y + faces[i].height) + 25),
             cv::FONT_HERSHEY_DUPLEX, 0.8, cv::Scalar(0, 0, 255), 2);
     }
 }
+
 
 void match(const cv::Mat& desc1, const cv::Mat& desc2, std::vector<cv::DMatch>& good_matches) {
     good_matches.clear();
@@ -118,8 +123,9 @@ void match(const cv::Mat& desc1, const cv::Mat& desc2, std::vector<cv::DMatch>& 
     }
 }
 
+
 void FaceIdentification(
-    std::vector<std::string>& names_of_detected_faces,
+    std::vector<size_t>& name_indices_of_detected_faces,
     const std::vector<std::string>& names,
     const std::vector<cv::Rect>& faces,
     cv::Ptr<cv::SIFT>& detector,
@@ -127,26 +133,27 @@ void FaceIdentification(
     std::vector<cv::KeyPoint>& person_keypoints_tmp,
     cv::Mat& person_descriptors,    
     std::vector<cv::DMatch>& good_matches,
-    std::vector<std::pair<size_t, std::string>>& good_matches_num,
+    std::vector<std::pair<size_t, size_t>>& good_matches_num,
     const std::vector<std::vector<cv::Mat>>& dataset)
 {
-    names_of_detected_faces.clear();
+    name_indices_of_detected_faces.clear();
     for (const auto& face: faces) {
         detector->detectAndCompute(full_frame(face), cv::Mat(), person_keypoints_tmp, person_descriptors);    
         for (size_t i = 0; i < dataset.size(); ++i) {
             for (const auto& true_descriptors: dataset[i]) {
                 match(person_descriptors, true_descriptors, good_matches);
-                good_matches_num.push_back(std::make_pair(good_matches.size(), names[i]));
+                good_matches_num.push_back(std::make_pair(good_matches.size(), i));
             }
         }
         std::sort(good_matches_num.begin(), good_matches_num.end(), std::greater<>());
 
         if (good_matches_num[0].first < SMALL_MATCHES_NUMBER)
-            names_of_detected_faces.push_back("Unknown");
+            name_indices_of_detected_faces.push_back(names.size() - 1);
         else
-            names_of_detected_faces.push_back(good_matches_num[0].second);
+            name_indices_of_detected_faces.push_back(good_matches_num[0].second);
     }
 }
+
 
 cv::CascadeClassifier face_cascade("haarcascade/haarcascade_frontalface_alt2.xml");
 
@@ -178,6 +185,7 @@ void TrackOrDetect(
         face_cascade.detectMultiScale(frame_downscaled, faces);
 }
 
+
 std::vector<std::vector<cv::Mat>> LoadDataset(const std::vector<std::string>& names, const std::string& dataset_path) {
     std::vector<cv::Mat> person_descriptors;
     std::vector<std::vector<cv::Mat>> dataset;
@@ -195,6 +203,23 @@ std::vector<std::vector<cv::Mat>> LoadDataset(const std::vector<std::string>& na
     return dataset;
 }
 
+
+double InetersectionOverUnion(const cv::Rect& rectangleA, const cv::Rect& rectangleB) {
+    double rect_intersection = (rectangleA & rectangleB).area();
+    double rect_union = rectangleA.area() + rectangleB.area() - rect_intersection;
+    return rect_intersection / rect_union;
+}
+
+
+bool AreTheSameFace(const cv::Rect& rectangleA, const cv::Rect& rectangleB) {
+    double IoU = InetersectionOverUnion(rectangleA, rectangleB);
+    if (IoU > IoU_THRESHOLD) {
+        return true;
+    }
+    return false;
+}
+
+
 void CheckFacesForIntersection(std::vector<cv::Rect>& faces) {
     std::vector<int> to_delete;
     for (int i = 0; i < faces.size(); ++i)
@@ -205,108 +230,6 @@ void CheckFacesForIntersection(std::vector<cv::Rect>& faces) {
         faces.erase(faces.begin() + to_delete[i]);
 }
 
-void FaceRecognition(
-    const std::string& filename,
-    const std::vector<std::string>& names,
-    cv::VideoCapture& capture,
-    const std::vector<std::vector<cv::Mat>>& dataset,
-    double& true_positives,
-    double& false_positives,
-    double& false_negatives,
-    const std::string& tracker_type)
-{
-    double frame_time = 1000. / capture.get(cv::CAP_PROP_FPS);
-    Time::time_point video_start, frame_end;
-    uchar wait_time;
-    int keyboard = 0;
-
-    cv::Mat full_frame, frame_downscaled, frame_gray;
-
-    double width = capture.get(cv::CAP_PROP_FRAME_WIDTH);
-    double height = capture.get(cv::CAP_PROP_FRAME_HEIGHT);
-
-    double new_width = 320;
-    double new_height = 180;
-
-    double scale = (((width/new_width) < (height/new_height)) ? (width/new_width) : (height/new_height));
-    double scale_inverse = 1. / static_cast<double>(scale);
-
-    bool first_frame = true;
-    int frame_count = 0;
-    double total_time_actual, total_time_predicted;
-
-    std::vector<cv::Rect> true_faces;
-    std::vector<cv::Rect> detected_faces;
-    std::vector<cv::Rect> faces_downscaled;
-    MultiTracker trackers = MultiTracker(tracker_type);
-
-    auto detector = cv::SIFT::create();
-    std::vector<cv::KeyPoint> person_keypoints_tmp;
-    cv::Mat person_descriptors;
-    std::vector<std::string> names_of_detected_faces;
-
-    std::vector<cv::DMatch> good_matches;
-    std::vector<std::pair<size_t, std::string>> good_matches_num;
-
-    bool tracked;
-
-    std::vector<std::vector<cv::Rect>> annotation_rectangles;
-    std::vector<std::vector<bool>> annotation_mask;
-    std::vector<int> name_indices;
-    LoadAnnotationsSingleFile(filename, annotation_rectangles, annotation_mask, name_indices);
-    
-    while (true) {
-        capture >> full_frame;
-        if (full_frame.empty())
-            break;
-        frame_count++;
-
-        cv::resize(full_frame, frame_downscaled, cv::Size(), scale_inverse, scale_inverse);
-        cvtColor(frame_downscaled, frame_gray, cv::COLOR_BGR2GRAY);
-
-        tracked = false;
-        TrackOrDetect(tracker_type, frame_count, faces_downscaled, frame_downscaled, frame_gray, trackers, tracked);
-
-        if (faces_downscaled.size() > 1)
-            CheckFacesForIntersection(faces_downscaled);
-
-        detected_faces.clear();
-        for (size_t i = 0; i < faces_downscaled.size(); ++i)
-            detected_faces.push_back(cv::Rect2d(
-                faces_downscaled[i].x*scale, faces_downscaled[i].y*scale,
-                faces_downscaled[i].width*scale, faces_downscaled[i].height*scale));
-
-        if (!tracked) {
-            FaceIdentification(
-                names_of_detected_faces, names, detected_faces, detector, full_frame,
-                person_keypoints_tmp, person_descriptors, good_matches, good_matches_num, dataset);
-        }
-        true_faces.clear();
-        for (size_t i = 0; i < name_indices.size(); ++i){
-            if (annotation_mask[i][frame_count - 1])
-                true_faces.push_back(annotation_rectangles[i][frame_count - 1]);}
-        
-
-        FrameDetectedStatistics(true_faces, detected_faces, true_positives, false_positives, false_negatives);
-        DrawFaces(full_frame, detected_faces, names_of_detected_faces);
-
-        cv::imshow("Face Recognition and Identification", full_frame);
-
-        if (first_frame) {
-            first_frame = false;
-            StartAudioPlayback(filename, video_start, first_frame);
-        }
-   
-        RealTimeSyncing(
-            video_start, frame_end, capture, total_time_actual, total_time_predicted,
-            frame_time, full_frame, frame_count, wait_time, keyboard);
-        
-        if (keyboard == 'q' || keyboard == 27) {
-            StopAudioPlayback(filename);
-            break;
-        }
-    }
-}
 
 void LoadAnnotationsSingleFile(
     const std::string& videoname,
@@ -368,20 +291,6 @@ void LoadAnnotationsSingleFile(
 } 
 
 
-double InetersectionOverUnion(const cv::Rect& rectangleA, const cv::Rect& rectangleB) {
-    double rect_intersection = (rectangleA & rectangleB).area();
-    double rect_union = rectangleA.area() + rectangleB.area() - rect_intersection;
-    return rect_intersection / rect_union;
-}
-
-bool AreTheSameFace(const cv::Rect& rectangleA, const cv::Rect& rectangleB) {
-    double IoU = InetersectionOverUnion(rectangleA, rectangleB);
-    if (IoU > IoU_THRESHOLD) {
-        return true;
-    }
-    return false;
-}
-
 void FrameDetectedStatistics(
     const std::vector<cv::Rect>& true_faces,
     const std::vector<cv::Rect>& detected_faces,
@@ -418,13 +327,190 @@ void FrameDetectedStatistics(
     false_negatives += false_negative;
 }
 
-void FrameClassStatistics(
-    const std::vector<std::string>& names_of_detected_faces,
-    const std::vector<std::string>& names,
-    const int& name_index,
-    const std::vector<std::vector<cv::Rect>>& annotation_rectangles,
-    const std::vector<std::vector<bool>>& annotation_mask,
-    const int& frame_count
-) {
 
+void FrameClassStatistics(
+    const std::vector<size_t>& name_indices_of_true_faces,
+    const std::vector<size_t>& name_indices_of_detected_faces,
+    const std::vector<cv::Rect>& true_faces,
+    const std::vector<cv::Rect>& detected_faces,
+    std::vector<std::vector<double>>& classes_statistics)
+{   
+    bool skip = false;
+    std::vector<cv::Rect> detected_faces_copy = detected_faces;
+    std::vector<size_t> name_indices_of_detected_faces_copy = name_indices_of_detected_faces;
+
+    for (int i = 0; i < true_faces.size(); ++i) {
+        for (int j = 0; j < detected_faces_copy.size(); ++j) {        
+            if (AreTheSameFace(true_faces[i], detected_faces_copy[j])) {
+                if (name_indices_of_true_faces[i] == name_indices_of_detected_faces_copy[j]) {
+                    classes_statistics[0][name_indices_of_true_faces[i]]++;
+                    detected_faces_copy.erase(detected_faces_copy.begin() + j);
+                    name_indices_of_detected_faces_copy.erase(name_indices_of_detected_faces_copy.begin() + j);
+                    skip = true;
+                    break;
+                }
+            }
+        }
+        if (skip) {
+            skip = false;
+            continue;
+        } else
+            classes_statistics[2][name_indices_of_true_faces[i]]++;
+    }
+
+    for (int i = 0; i < detected_faces_copy.size(); ++i)
+        classes_statistics[1][name_indices_of_detected_faces_copy[i]]++;
+}
+
+
+void FaceRecognition(
+    const std::string& filename,
+    const std::vector<std::string>& names,
+    cv::VideoCapture& capture,
+    const std::vector<std::vector<cv::Mat>>& dataset,
+    double& true_positives,
+    double& false_positives,
+    double& false_negatives,
+    std::vector<std::vector<double>>& classes_statistics,
+    const std::string& tracker_type)
+{
+    double frame_time = 1000. / capture.get(cv::CAP_PROP_FPS);
+    Time::time_point video_start, frame_end;
+    uchar wait_time;
+    int keyboard = 0;
+
+    cv::Mat full_frame, frame_downscaled, frame_gray;
+
+    double width = capture.get(cv::CAP_PROP_FRAME_WIDTH);
+    double height = capture.get(cv::CAP_PROP_FRAME_HEIGHT);
+
+    double new_width = 320;
+    double new_height = 180;
+
+    double scale = (((width/new_width) < (height/new_height)) ? (width/new_width) : (height/new_height));
+    double scale_inverse = 1. / static_cast<double>(scale);
+
+    bool first_frame = true;
+    int frame_count = 0;
+    double total_time_actual, total_time_predicted;
+
+    std::vector<cv::Rect> true_faces;
+    std::vector<cv::Rect> detected_faces;
+    std::vector<cv::Rect> faces_downscaled;
+    MultiTracker trackers = MultiTracker(tracker_type);
+
+    auto detector = cv::SIFT::create();
+    std::vector<cv::KeyPoint> person_keypoints_tmp;
+    cv::Mat person_descriptors;
+
+    std::vector<size_t> name_indices_of_detected_faces;
+    std::vector<size_t> name_indices_of_true_faces;
+
+    std::vector<cv::DMatch> good_matches;
+    std::vector<std::pair<size_t, size_t>> good_matches_num;
+
+    std::vector<std::vector<cv::Rect>> annotation_rectangles;
+    std::vector<std::vector<bool>> annotation_mask;
+    std::vector<int> name_indices;
+    LoadAnnotationsSingleFile(filename, annotation_rectangles, annotation_mask, name_indices);
+
+    bool tracked;
+    
+    while (true) {
+        capture >> full_frame;
+        if (full_frame.empty())
+            break;
+        frame_count++;
+
+        cv::resize(full_frame, frame_downscaled, cv::Size(), scale_inverse, scale_inverse);
+        cvtColor(frame_downscaled, frame_gray, cv::COLOR_BGR2GRAY);
+
+        tracked = false;
+        TrackOrDetect(tracker_type, frame_count, faces_downscaled, frame_downscaled, frame_gray, trackers, tracked);
+
+        if (faces_downscaled.size() > 1)
+            CheckFacesForIntersection(faces_downscaled);
+
+        detected_faces.clear();
+        for (size_t i = 0; i < faces_downscaled.size(); ++i)
+            detected_faces.push_back(cv::Rect2d(
+                faces_downscaled[i].x*scale, faces_downscaled[i].y*scale,
+                faces_downscaled[i].width*scale, faces_downscaled[i].height*scale));
+
+        if (!tracked) {
+            FaceIdentification(
+                name_indices_of_detected_faces, names, detected_faces, detector, full_frame,
+                person_keypoints_tmp, person_descriptors, good_matches, good_matches_num, dataset);
+        }
+
+        true_faces.clear();
+        name_indices_of_true_faces.clear();
+        for (size_t i = 0; i < name_indices.size(); ++i){
+            if (annotation_mask[i][frame_count - 1]) {
+                true_faces.push_back(annotation_rectangles[i][frame_count - 1]);
+                name_indices_of_true_faces.push_back(name_indices[i]);
+            }
+        }
+                
+        FrameDetectedStatistics(true_faces, detected_faces, true_positives, false_positives, false_negatives);
+        FrameClassStatistics(name_indices_of_true_faces, name_indices_of_detected_faces, true_faces, detected_faces, classes_statistics);
+        DrawFaces(full_frame, detected_faces, name_indices_of_detected_faces, names);
+
+        cv::imshow("Face Recognition and Identification", full_frame);
+
+        if (first_frame) {
+            first_frame = false;
+            StartAudioPlayback(filename, video_start, first_frame);
+        }
+   
+        RealTimeSyncing(
+            video_start, frame_end, capture, total_time_actual, total_time_predicted,
+            frame_time, full_frame, frame_count, wait_time, keyboard);
+        
+        if (keyboard == 'q' || keyboard == 27) {
+            #ifdef _WIN32
+                StopAudioPlayback(filename);
+            #endif
+            break;
+        }
+    }
+}
+
+
+void PrecisionRecallFNR(
+    double& precision, double& recall, double& FNR,
+    const double& true_positives, const double& false_positives, const double& false_negatives)
+{
+    precision = (true_positives + false_positives == 0) ? 0 : true_positives / (true_positives + false_positives);
+    recall = true_positives / (true_positives + false_negatives);
+    FNR = 1 - recall;
+}
+
+
+void PrintDetectionStatistics(const double& true_positives, const double& false_positives, const double& false_negatives) {
+    double precision, recall, FNR;
+    PrecisionRecallFNR(precision, recall, FNR, true_positives, false_positives, false_negatives);
+    std::cout << "\n#####   DETECTION AND TRACKING STATISTICS   #####\n\n";
+    std::cout << "Precision - " << precision << ".\n";
+    std::cout << "Recall - " << recall << ".\n";
+    std::cout << "FNR - " << FNR << ".\n";
+}
+
+
+void PrintClassesStatistics(const std::vector<std::vector<double>>& classes_statistics, const std::vector<std::string>& names) {
+    double precision, recall, FNR;
+    double true_positives, false_positives, false_negatives;
+    std::cout << "\n\n##########    STATISTICS ON CLASSES    ##########\n";
+    for (size_t i = 0; i < names.size(); ++i) {
+        true_positives = classes_statistics[0][i];
+        false_positives = classes_statistics[1][i];
+        false_negatives = classes_statistics[2][i];
+        if (true_positives == 0 && false_positives == 0 && false_negatives == 0)
+            continue;
+        PrecisionRecallFNR(precision, recall, FNR, true_positives, false_positives, false_negatives);
+        std::cout << "\n" << names[i] << ":\n";
+        std::cout << "Precision - " << precision << ".\n";
+        std::cout << "Recall - " << recall << ".\n";
+        std::cout << "FNR - " << FNR << ".\n";
+    }
 }
