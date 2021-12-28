@@ -36,7 +36,6 @@ void RealTimeSyncing(
 void DrawFaces(
     cv::Mat full_frame,
     const std::vector<cv::Rect>& faces,
-    const double& scale,
     const std::vector<std::string>& names);
 
 void FaceIdentification(
@@ -45,7 +44,6 @@ void FaceIdentification(
     const std::vector<cv::Rect>& faces,
     cv::Ptr<cv::SIFT>& detector,
     const cv::Mat& full_frame,
-    const double& scale,
     std::vector<cv::KeyPoint>& person_keypoints_tmp,
     cv::Mat& person_descriptors,    
     std::vector<cv::DMatch>& good_matches,
@@ -66,15 +64,26 @@ void FaceRecognition(
     const std::vector<std::string>& names,
     cv::VideoCapture& capture,
     const std::vector<std::vector<cv::Mat>>& dataset,
+    double& true_positives,
+    double& false_positives,
+    double& false_negatives,
     const std::string& tracker_type = "KCF");
 
-void LoadAnnotations(
+void LoadAnnotationsSingleFile(
     const std::string& videoname,
     std::vector<std::vector<cv::Rect>>& annotation_rectangles,
-    std::vector<std::vector<size_t>>& annotation_name_indices);
+    std::vector<std::vector<bool>>& annotation_mask,
+    std::vector<int>& name_indices);
 
 double InetersectionOverUnion(const cv::Rect& rectangleA, const cv::Rect& rectangleB);
 
 bool AreTheSameFace(const cv::Rect& rectangleA, const cv::Rect& rectangleB);
+
+void FrameDetectedStatistics(
+    const std::vector<cv::Rect>& true_faces,
+    const std::vector<cv::Rect>& detected_faces,
+    double& true_positives,
+    double& false_positives,
+    double& false_negatives);
 
 #endif // VIDEO_PROCESSING_H

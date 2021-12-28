@@ -37,18 +37,32 @@ int main(int argc, char* argv[]) {
     auto names = GetNames(dataset_path);
     auto dataset = LoadDataset(names, dataset_path);
 
+    double true_positives = 0;
+    double false_positives = 0;
+    double false_negatives = 0;
+
     if (single_video_flag) {
         video_path = "test\\" + video_name;
         capture = cv::VideoCapture(video_path);
-        FaceRecognition(video_path, names, capture, dataset);
+        FaceRecognition(video_path, names, capture, dataset, true_positives, false_positives, false_negatives);
     } else {
         std::vector<std::string> directories;
         for(auto& video: std::filesystem::directory_iterator("test")) {
-            video_path = video.path().string();
-            capture = cv::VideoCapture(video_path);
-            FaceRecognition(video_path, names, capture, dataset);
+            if (!video.is_directory()) {
+                video_path = video.path().string();
+                capture = cv::VideoCapture(video_path);
+                FaceRecognition(video_path, names, capture, dataset, true_positives, false_positives, false_negatives);
+            }      
         }
     }
+
+    double precision = true_positives / (true_positives + false_positives);
+    double recall = true_positives / (true_positives + false_negatives);
+    double FNR = 1 - recall;
+
+    std::cout << "Precision: " << precision << ".\n";
+    std::cout << "Recall: " << recall << ".\n";
+    std::cout << "FNR: " << FNR << ".\n\n";
     
     return 0;
 }
