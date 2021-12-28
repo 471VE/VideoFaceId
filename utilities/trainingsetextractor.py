@@ -52,8 +52,8 @@ if __name__ == "__main__":
     is_drawing = False
     x_initial = -1
     y_initial = -1
-    image_names = glob(f'{directory}\\*.jpg') + glob(f'{directory}\\*.png') + glob(f'{directory}\\*\\*.jpg') + glob(f'{directory}\\*\\*.png')
-
+    image_names = glob(f'{directory}\\*.jpg') + glob(f'{directory}\\*.png')
+    
     for image_name in image_names:
         image = cv2.imread(image_name)
         scale = 1

@@ -4,6 +4,9 @@
 #include <Windows.h>
 #include <filesystem>
 
+const size_t SMALL_MATCHES_NUMBER = 15;
+const double GOOD_MATCH_RATIO = 0.75;
+
 std::vector<std::string> GetNames(const std::string& path_to_dir) {
     std::vector<std::string> directories;
     for(auto& element: std::filesystem::directory_iterator(path_to_dir))
@@ -102,11 +105,9 @@ void match(const cv::Mat& desc1, const cv::Mat& desc2, std::vector<cv::DMatch>& 
         if (!vmatches[i].size()) {
             continue;
         }
-        if (vmatches[i][0].distance < 0.75 * vmatches[i][1].distance)
+        if (vmatches[i][0].distance < GOOD_MATCH_RATIO * vmatches[i][1].distance)
             good_matches.push_back(vmatches[i][0]);
     }
-
-    std::sort(good_matches.begin(), good_matches.end());
 }
 
 void FaceIdentification(
@@ -133,9 +134,12 @@ void FaceIdentification(
                 good_matches_num.push_back(std::make_pair(good_matches.size(), names[i]));
             }
         }
-
         std::sort(good_matches_num.begin(), good_matches_num.end(), std::greater<>());
-        names_of_detected_faces.push_back(good_matches_num[0].second);
+
+        if (good_matches_num[0].first < SMALL_MATCHES_NUMBER)
+            names_of_detected_faces.push_back("Unknown");
+        else
+            names_of_detected_faces.push_back(good_matches_num[0].second);
     }
 }
 
