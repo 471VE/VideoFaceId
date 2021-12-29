@@ -41,7 +41,6 @@ int main(int argc, char* argv[]) {
     double true_positives = 0;
     double false_positives = 0;
     double false_negatives = 0;
-
     std::vector<std::vector<double>> classes_statistics(3, std::vector<double>(names.size(), 0));
 
     if (single_video_flag) {

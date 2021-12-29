@@ -9,8 +9,8 @@
     #include <Windows.h>
 #endif
 
-const double GOOD_MATCH_RATIO = 0.75;
-const size_t SMALL_MATCHES_NUMBER = 15;
+const double GOOD_MATCH_RATIO = 0.65; //  FINETUNED
+const size_t SMALL_MATCHES_NUMBER = 9; // FINETUNED
 
 const double IoU_THRESHOLD = 0.3;
 
