@@ -499,7 +499,7 @@ void FaceRecognition(
             video_start, frame_end, capture, total_time_actual, total_time_predicted,
             frame_time, full_frame, frame_count, wait_time, keyboard);
         
-        if (keyboard == 'q' || keyboard == 27) {
+        if (keyboard == 'q' || keyboard == 'Q' || keyboard == 27) {
             #ifdef _WIN32
                 // Stops audio.
                 StopAudioPlayback(filename);

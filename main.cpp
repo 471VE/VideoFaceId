@@ -15,7 +15,7 @@ std::string video_name;
 std::string video_path;
 
 void ParseCmdArgs(int argc, char** argv) {
-    if (argc != 1) {
+    if (argc <= 4) {
         if (argc == 2) {
             if (std::string(argv[1]) != "--skip-stats") {
                 std::cerr << "\nWith this number od arguments, you can only specify the \"--skip_stats\" flag ";
@@ -42,10 +42,11 @@ void ParseCmdArgs(int argc, char** argv) {
             }
         }
     } else {
-        std::cerr << "\nUnacceptable number of arguments. Exiting...";
-        exit(1);
+    std::cerr << "\nUnacceptable number of arguments. Exiting...";
+    exit(1);
     }
 }
+
 
 int main(int argc, char* argv[]) {
     ParseCmdArgs(argc, argv);

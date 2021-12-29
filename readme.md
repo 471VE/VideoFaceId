@@ -6,7 +6,7 @@ If name of the video is not specified, all of the videos will be processed one b
 The program calculates statistics by default. If you do not have the annotations or just do not want to calculate them, you should add "--skip-stats" flag at the end.
 
 Examples for Windows system (copy and paste to the command line without quotes):
-- "build\bin\Release\faceID ";
+- "build\bin\Release\faceID";
 - "build\bin\Release\faceID --skip-stats";
 - "build\bin\Release\faceID --video christian_bale1_fin_s.mp4";
 - "build\bin\Release\faceID --video christian_bale1_fin_s.mp4 --skip-stats";
