@@ -7,6 +7,8 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/tracking.hpp>
 
+// The MultiTracker class is used to track multiple objects using the specified tracker algorithm.
+// It is naive implementation of multiple object tracking.
 class MultiTracker {
     public:
         MultiTracker(const std::string& tracker_type);

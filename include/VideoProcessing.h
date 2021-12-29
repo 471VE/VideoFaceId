@@ -29,6 +29,7 @@ void FaceRecognition(
     double& false_positives,
     double& false_negatives,
     std::vector<std::vector<double>>& classes_statistics,
+    const bool& skip_stats,
     const std::string& tracker_type = "KCF");
 
 void PrintDetectionStatistics(const double& true_positives, const double& false_positives, const double& false_negatives);

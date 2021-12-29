@@ -1,15 +1,44 @@
+# IMPORTANT: as of now, this script does NOT support more than one unknown person on each frame. Please keep that in mind.
+#
+# The following script is used to annotate the real face positions on the video.
+# Specify the name of the video in the "test" directory in the command line.
+# In case it isn't specified, all videos in the "test" folder will be opened one by one.
+#
+# Examples:
+# 'python utilities\videoannotations.py';
+# 'python utilities\videoannotations.py christian_bale1_fin_s.mp4'.
+#
+# At first, you have to specify the indexes of available persons that are present in the video selected, separated by the space symbol.
+# Then, the video will be opened exactly the number of selected persons times.
+# You will have to select only one person's face on each play.
+#
+# Select the face with mouse. Only one face may be selected on the frame. Press SPACE or L key to continue.
+# After that, tracker will follow the face until it fails to do so.
+# You will have to select the face again or skip the frame until the one where you would want to select the face.
+# To skip the frame, do not select anything, and press SPACE or L key.
+# Press K key to skip 5 frames. Press J key to go to the previous frame.
+# The annotations are saved in the same directory in "annotations" subfolder in the folder that matches the name of the video.
+#
+# It shouldn't take more than one minute to annotate one video of less than 20 seconds.
+#
+# OpenCV library must be installed. To install it, run the "pip install opencv-python" command in the terminal.
+
 import cv2
-import numpy as np
 from glob import glob
 from os.path import isdir
 from os import makedirs
 from sys import argv
+
 
 class IncorrectNumberOfArguments(Exception):
     pass
 
 
 def square_params(x_initial, x, y_initial, y):
+    """
+    Calculates square parameters acquired from the mouse movements for rendering the square on the image.
+    
+    """
     side = abs(y_initial - y)    
     x_top = round(x - side/2)
     x_bottom = round(x + side/2)    
@@ -19,6 +48,10 @@ def square_params(x_initial, x, y_initial, y):
 
 
 def annotations_filename(video_name, person_name):
+    """
+    Returns the filename where the annotations will be saved.
+    
+    """
     path = video_name.split("\\")
     if not isdir(f"test\\annotations\\{path[-1][:-4]}"):
         makedirs(f"test\\annotations\\{path[-1][:-4]}")
@@ -39,7 +72,8 @@ if __name__ == "__main__":
         video_names = glob('test\\*.mp4')
     elif len(argv) == 2:
         video_names = [f"test\\{argv[1]}"]
-        
+    
+    # Load names of persons available in the dataset:
     instruction_names = glob('training_set\\*')
     instruction_names = list(map(lambda x: x.split('\\')[-1], instruction_names)) + ['Unknown']
     instruction_list = '\n'.join([f"{name}: {index}" for index, name in enumerate(instruction_names)])    
@@ -86,6 +120,10 @@ if __name__ == "__main__":
                         already_drawn = False
 
                         def draw_square(event, x, y, flags, param):
+                            """
+                            Function that draws the square on the frame.
+                            
+                            """
                             global is_drawing, x_initial, y_initial
                             global frame, cache
                             global top_corner, bottom_corner, side   
@@ -123,21 +161,21 @@ if __name__ == "__main__":
                             cv2.imshow(video_name, frame)
                             keyboard = cv2.waitKey(1) & 0xFF
                             
-                            if keyboard in (32, ord('l')): # SPACE key
+                            if keyboard in (32, ord('l')): # SPACE key or L key
                                 break
                             
                             elif keyboard == 27: # ESCAPE key
                                 exit_video = True
                                 break
                             
-                            elif keyboard == ord('j'):
+                            elif keyboard == ord('j'): # J key
                                 next_frame = capture.get(cv2.CAP_PROP_POS_FRAMES)
                                 previous_frame = next_frame - 2
                                 capture.set(cv2.CAP_PROP_POS_FRAMES, previous_frame)
                                 prev_frame = True
                                 break
                             
-                            elif keyboard == ord('k'):
+                            elif keyboard == ord('k'): # K key
                                 next_frame = capture.get(cv2.CAP_PROP_POS_FRAMES) - 1
                                 capture.set(cv2.CAP_PROP_POS_FRAMES, next_frame + 5)
                                 skip_frames = True
@@ -170,6 +208,7 @@ if __name__ == "__main__":
                         cv2.waitKey(1)
 
                 elif not tracked:
+                    # Giant chunck of code that had to be repeated beacause of difficulties with dealing with global variables:
                     cache = frame.copy()
                     top_corner = -1
                     bottom_corner = -1
@@ -216,21 +255,21 @@ if __name__ == "__main__":
                         cv2.imshow(video_name, frame)
                         keyboard = cv2.waitKey(1) & 0xFF
                         
-                        if keyboard in (32, ord('l')): # SPACE key or RIGHT ARROW key
+                        if keyboard in (32, ord('l')): # SPACE key or L key
                             break
                         
                         elif keyboard == 27: # ESCAPE key
                             exit_video = True
                             break
                         
-                        elif keyboard == ord('j'): # LEFT ARROW key
+                        elif keyboard == ord('j'): # J key
                             next_frame = capture.get(cv2.CAP_PROP_POS_FRAMES)
                             previous_frame = next_frame - 2
                             capture.set(cv2.CAP_PROP_POS_FRAMES, previous_frame)
                             prev_frame = True
                             break
                         
-                        elif keyboard == ord('k'): # DOWN ARROW key
+                        elif keyboard == ord('k'): # K key
                             next_frame = capture.get(cv2.CAP_PROP_POS_FRAMES) - 1
                             capture.set(cv2.CAP_PROP_POS_FRAMES, next_frame + 5)
                             skip_frames = True
@@ -255,7 +294,8 @@ if __name__ == "__main__":
                             tracked = False
                 
             cv2.destroyAllWindows()
-            if write_to_file:            
+            if write_to_file:
+                # Save annotations to file:           
                 with open(annotations_filename(video_name, person_name), "w") as annotations_file:
                     annotations_file.write(annotations_string[:-1])
             else:

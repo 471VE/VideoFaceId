@@ -1,5 +1,17 @@
+# The following script is used to extract SIFT descriptors from the photo.
+# Specify the path to the person's images when starting the script from the command line.
+#
+# Examples:
+# 'python utilities\trainingsetextractor.py "training_set\Christian Bale"';
+# 'python utilities\trainingsetextractor.py "training_set\Harrison Ford"'.
+#
+# Select the face with mouse. Only one face may be selected on an image. Press SPACE, ESCAPE or ENTER key to continue.
+# To skip the image, do not select anything, and press SPACE, ESCAPE or ENTER key.
+# The descriptors are saved in the same directory in "descriptors\SIFT" subfolder.
+#
+# OpenCV library must be installed. To install it, run the "pip install opencv-python" command in the terminal.
+
 import cv2
-import numpy as np
 from glob import glob
 from os.path import isdir
 from os import makedirs
@@ -15,26 +27,33 @@ class UnacceptableFeatureExtractorType(Exception):
     pass
 
 def square_params(x_initial, x, y_initial, y):
-    side = abs(y_initial - y)
+    """
+    Calculates square parameters acquired from the mouse movements for rendering the square on the image.
     
+    """
+    side = abs(y_initial - y)    
     x_top = round(x - side/2)
-    x_bottom = round(x + side/2)
-    
+    x_bottom = round(x + side/2)    
     y_top = min(y_initial, y)
-    y_bottom = max(y_initial, y)
-    
+    y_bottom = max(y_initial, y)    
     return (x_top, y_top), (x_bottom, y_bottom)
 
 def descriptor_filename(image_filename):
-    path = image_filename.split("\\")
+    """
+    Returns path where image will be saved.
 
+    """
+    path = image_filename.split("\\")
     if not isdir(f"{directory}\\descriptors\\SIFT"):
         makedirs(f"{directory}\\descriptors\\SIFT")
-    path[-1] =  f"descriptors\\SIFT\\{path[-1][:-4]}_descriptor_SIFT.png"
-        
+    path[-1] =  f"descriptors\\SIFT\\{path[-1][:-4]}_descriptor_SIFT.png"        
     return "\\".join(path)
 
 def save_descriptor(image_name, face):
+    """
+    Saves the descriptor to ".png" image for easy loading in the main program.
+    
+    """
     sift = cv2.SIFT_create()
     _, descriptors = sift.detectAndCompute(face, None)            
     cv2.imwrite(descriptor_filename(image_name), descriptors)
@@ -52,10 +71,14 @@ if __name__ == "__main__":
     is_drawing = False
     x_initial = -1
     y_initial = -1
+    
+    # Get images present in the directory:
     image_names = glob(f'{directory}\\*.jpg') + glob(f'{directory}\\*.png')
     
     for image_name in image_names:
         image = cv2.imread(image_name)
+        
+        # Downscale the image in case it cannot fit the screen:
         scale = 1
         if image.shape[1] > 1500 or image.shape[0] > 800:
             scale_x = 1500 / image.shape[1]
@@ -72,6 +95,10 @@ if __name__ == "__main__":
         already_drawn = False
 
         def draw_square(event, x, y, flags, param):
+            """
+            Function that actually draws square.
+            
+            """
             global is_drawing, x_initial, y_initial
             global image, cache, square_parameters
             global top_corner, bottom_corner

@@ -388,6 +388,7 @@ void FaceRecognition(
     double& false_positives,
     double& false_negatives,
     std::vector<std::vector<double>>& classes_statistics,
+    const bool& skip_stats,
     const std::string& tracker_type)
 {
     double frame_time = 1000. / capture.get(cv::CAP_PROP_FPS);
@@ -410,8 +411,8 @@ void FaceRecognition(
     int frame_count = 0;
     double total_time_actual, total_time_predicted;
 
-    std::vector<cv::Rect> true_faces;
     std::vector<cv::Rect> detected_faces;
+    std::vector<size_t> name_indices_of_detected_faces;
     std::vector<cv::Rect> faces_downscaled;
     MultiTracker trackers = MultiTracker(tracker_type);
 
@@ -419,16 +420,17 @@ void FaceRecognition(
     std::vector<cv::KeyPoint> person_keypoints_tmp;
     cv::Mat person_descriptors;
 
-    std::vector<size_t> name_indices_of_detected_faces;
-    std::vector<size_t> name_indices_of_true_faces;
-
     std::vector<cv::DMatch> good_matches;
     std::vector<std::pair<size_t, size_t>> good_matches_num;
+
+    std::vector<cv::Rect> true_faces;
+    std::vector<size_t> name_indices_of_true_faces;
 
     std::vector<std::vector<cv::Rect>> annotation_rectangles;
     std::vector<std::vector<bool>> annotation_mask;
     std::vector<int> name_indices;
-    LoadAnnotationsSingleFile(filename, annotation_rectangles, annotation_mask, name_indices);
+    if (!skip_stats)
+        LoadAnnotationsSingleFile(filename, annotation_rectangles, annotation_mask, name_indices);
 
     bool tracked;
     
@@ -464,19 +466,24 @@ void FaceRecognition(
                 person_keypoints_tmp, person_descriptors, good_matches, good_matches_num, dataset);
         }
 
-        // Get information about ground truth faces.
-        true_faces.clear();
-        name_indices_of_true_faces.clear();
-        for (size_t i = 0; i < name_indices.size(); ++i){
-            if (annotation_mask[i][frame_count - 1]) {
-                true_faces.push_back(annotation_rectangles[i][frame_count - 1]);
-                name_indices_of_true_faces.push_back(name_indices[i]);
+        if (!skip_stats) {
+            // Get information about ground truth faces.
+            true_faces.clear();
+            name_indices_of_true_faces.clear();
+            for (size_t i = 0; i < name_indices.size(); ++i){
+                if (annotation_mask[i][frame_count - 1]) {
+                    true_faces.push_back(annotation_rectangles[i][frame_count - 1]);
+                    name_indices_of_true_faces.push_back(name_indices[i]);
+                }
             }
         }
+ 
+        if (!skip_stats) {
+            // Calculate statistics about face detection and recognition.
+            FrameDetectedStatistics(true_faces, detected_faces, true_positives, false_positives, false_negatives);
+            FrameClassStatistics(name_indices_of_true_faces, name_indices_of_detected_faces, true_faces, detected_faces, classes_statistics);
+        }
         
-        // Calculate statistics about face detection and recognition.
-        FrameDetectedStatistics(true_faces, detected_faces, true_positives, false_positives, false_negatives);
-        FrameClassStatistics(name_indices_of_true_faces, name_indices_of_detected_faces, true_faces, detected_faces, classes_statistics);
         DrawFaces(full_frame, detected_faces, name_indices_of_detected_faces, names);
 
         cv::imshow("Face Recognition and Identification", full_frame);
