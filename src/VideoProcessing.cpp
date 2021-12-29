@@ -15,6 +15,7 @@ const size_t SMALL_MATCHES_NUMBER = 9; // FINETUNED
 const double IoU_THRESHOLD = 0.3;
 
 
+// Gets names of people in the database.
 std::vector<std::string> GetNames(const std::string& path_to_dir) {
     std::vector<std::string> directories;
     for(auto& element: std::filesystem::directory_iterator(path_to_dir))
@@ -27,6 +28,7 @@ std::vector<std::string> GetNames(const std::string& path_to_dir) {
 }
 
 
+// Syncs video playback to real-time.
 void RealTimeSyncing(
     const Time::time_point& video_start,
     Time::time_point& frame_end,
@@ -61,6 +63,7 @@ void RealTimeSyncing(
 }
 
 
+// Srarts timer and audio if the OS is Windows.
 void StartAudioPlayback(const std::string& filename, Time::time_point& video_start, bool& first_frame) {
     #ifdef _WIN32
         std::string open_string = "open " + filename + " type mpegvideo";
@@ -82,6 +85,7 @@ void StartAudioPlayback(const std::string& filename, Time::time_point& video_sta
 }
 
 #ifdef _WIN32
+// Stops audio upon command.
 void StopAudioPlayback(const std::string& filename) {
     std::string close_string = "close " + filename;
     LPCSTR close_command = close_string.c_str();
@@ -90,6 +94,7 @@ void StopAudioPlayback(const std::string& filename) {
 #endif
 
 
+// Draws faces on the specified frame.
 void DrawFaces(
     cv::Mat full_frame,
     const std::vector<cv::Rect>& faces,
@@ -107,6 +112,7 @@ void DrawFaces(
 }
 
 
+// Finds good matches using 2NN.
 void match(const cv::Mat& desc1, const cv::Mat& desc2, std::vector<cv::DMatch>& good_matches) {
     good_matches.clear();
 
@@ -124,6 +130,8 @@ void match(const cv::Mat& desc1, const cv::Mat& desc2, std::vector<cv::DMatch>& 
 }
 
 
+// Extracts descriptor from detected face and compares it to the database, chooses the person that matches the best.
+// In case if all of the faces match poorly, classifies the person as "Unknown".
 void FaceIdentification(
     std::vector<size_t>& name_indices_of_detected_faces,
     const std::vector<std::string>& names,
@@ -157,6 +165,7 @@ void FaceIdentification(
 
 cv::CascadeClassifier face_cascade("haarcascade/haarcascade_frontalface_alt2.xml");
 
+// Tracks faces from previous frames or detects new ones in case of failure to track.
 void TrackOrDetect(
     const std::string& tracker_type,
     const int& frame_count,
@@ -186,6 +195,7 @@ void TrackOrDetect(
 }
 
 
+// Loads previously created descriptors for all people.
 std::vector<std::vector<cv::Mat>> LoadDataset(const std::vector<std::string>& names, const std::string& dataset_path) {
     std::vector<cv::Mat> person_descriptors;
     std::vector<std::vector<cv::Mat>> dataset;
@@ -204,6 +214,7 @@ std::vector<std::vector<cv::Mat>> LoadDataset(const std::vector<std::string>& na
 }
 
 
+// Calculates IoU for two rectangles.
 double InetersectionOverUnion(const cv::Rect& rectangleA, const cv::Rect& rectangleB) {
     double rect_intersection = (rectangleA & rectangleB).area();
     double rect_union = rectangleA.area() + rectangleB.area() - rect_intersection;
@@ -211,6 +222,7 @@ double InetersectionOverUnion(const cv::Rect& rectangleA, const cv::Rect& rectan
 }
 
 
+// Checks if the rectangles correspond to the same face.
 bool AreTheSameFace(const cv::Rect& rectangleA, const cv::Rect& rectangleB) {
     double IoU = InetersectionOverUnion(rectangleA, rectangleB);
     if (IoU > IoU_THRESHOLD) {
@@ -220,6 +232,7 @@ bool AreTheSameFace(const cv::Rect& rectangleA, const cv::Rect& rectangleB) {
 }
 
 
+// Checks if there are reduntant detected faces for the same person and deletes them if they exist.
 void CheckFacesForIntersection(std::vector<cv::Rect>& faces) {
     std::vector<int> to_delete;
     for (int i = 0; i < faces.size(); ++i)
@@ -231,6 +244,7 @@ void CheckFacesForIntersection(std::vector<cv::Rect>& faces) {
 }
 
 
+// Loads video annotations created previously for specified video
 void LoadAnnotationsSingleFile(
     const std::string& videoname,
     std::vector<std::vector<cv::Rect>>& annotation_rectangles,
@@ -291,6 +305,7 @@ void LoadAnnotationsSingleFile(
 } 
 
 
+// Refreshes statistics about face detection.
 void FrameDetectedStatistics(
     const std::vector<cv::Rect>& true_faces,
     const std::vector<cv::Rect>& detected_faces,
@@ -302,7 +317,6 @@ void FrameDetectedStatistics(
     double false_positive = static_cast<double>(detected_faces.size());
     double false_negative = static_cast<double>(true_faces.size());
     bool skip = false;
-
     std::vector<cv::Rect> true_faces_copy = true_faces;
 
     for (int i = 0; i < detected_faces.size(); ++i) {
@@ -321,13 +335,14 @@ void FrameDetectedStatistics(
             continue;
         }
     }
-
     true_positives += true_positive;
     false_positives += false_positive;
     false_negatives += false_negative;
 }
 
 
+// Refreshes statistics about face recognition for all known people, as well as uknown.
+// They include TP, FP and FN for all classes.
 void FrameClassStatistics(
     const std::vector<size_t>& name_indices_of_true_faces,
     const std::vector<size_t>& name_indices_of_detected_faces,
@@ -363,6 +378,7 @@ void FrameClassStatistics(
 }
 
 
+// The main function that processes the video from start to finish.
 void FaceRecognition(
     const std::string& filename,
     const std::vector<std::string>& names,
@@ -422,15 +438,19 @@ void FaceRecognition(
             break;
         frame_count++;
 
+        // Downscaling the frame to increase performance.
         cv::resize(full_frame, frame_downscaled, cv::Size(), scale_inverse, scale_inverse);
         cvtColor(frame_downscaled, frame_gray, cv::COLOR_BGR2GRAY);
 
+        // Find faces on the frame by either detecting anew or tracking from the previous frame.
         tracked = false;
         TrackOrDetect(tracker_type, frame_count, faces_downscaled, frame_downscaled, frame_gray, trackers, tracked);
 
+        // Non-maximum supression sometimes works bad, so this is needed to remove redundant faces for the same person.
         if (faces_downscaled.size() > 1)
             CheckFacesForIntersection(faces_downscaled);
 
+        // Upscale the detected faces back.
         detected_faces.clear();
         for (size_t i = 0; i < faces_downscaled.size(); ++i)
             detected_faces.push_back(cv::Rect2d(
@@ -438,11 +458,13 @@ void FaceRecognition(
                 faces_downscaled[i].width*scale, faces_downscaled[i].height*scale));
 
         if (!tracked) {
+            // Identify the detected faces.
             FaceIdentification(
                 name_indices_of_detected_faces, names, detected_faces, detector, full_frame,
                 person_keypoints_tmp, person_descriptors, good_matches, good_matches_num, dataset);
         }
 
+        // Get information about ground truth faces.
         true_faces.clear();
         name_indices_of_true_faces.clear();
         for (size_t i = 0; i < name_indices.size(); ++i){
@@ -451,7 +473,8 @@ void FaceRecognition(
                 name_indices_of_true_faces.push_back(name_indices[i]);
             }
         }
-                
+        
+        // Calculate statistics about face detection and recognition.
         FrameDetectedStatistics(true_faces, detected_faces, true_positives, false_positives, false_negatives);
         FrameClassStatistics(name_indices_of_true_faces, name_indices_of_detected_faces, true_faces, detected_faces, classes_statistics);
         DrawFaces(full_frame, detected_faces, name_indices_of_detected_faces, names);
@@ -460,15 +483,18 @@ void FaceRecognition(
 
         if (first_frame) {
             first_frame = false;
+            // Starts timer and starts audio if current OS is Windows.
             StartAudioPlayback(filename, video_start, first_frame);
         }
    
+        // Syncs video capture with audio.
         RealTimeSyncing(
             video_start, frame_end, capture, total_time_actual, total_time_predicted,
             frame_time, full_frame, frame_count, wait_time, keyboard);
         
         if (keyboard == 'q' || keyboard == 27) {
             #ifdef _WIN32
+                // Stops audio.
                 StopAudioPlayback(filename);
             #endif
             break;
@@ -477,6 +503,7 @@ void FaceRecognition(
 }
 
 
+// Calculates precision, recall and FNR.
 void PrecisionRecallFNR(
     double& precision, double& recall, double& FNR,
     const double& true_positives, const double& false_positives, const double& false_negatives)

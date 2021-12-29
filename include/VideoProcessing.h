@@ -14,9 +14,12 @@
 using Time = std::chrono::high_resolution_clock;
 using ns = std::chrono::nanoseconds;
 
+// Gets names of people in the database.
 std::vector<std::string> GetNames(const std::string& path_to_dir);
+// Loads previously created descriptors for all people.
 std::vector<std::vector<cv::Mat>> LoadDataset(const std::vector<std::string>& names, const std::string& dataset_path);
 
+// The main function that processes the video from start to finish.
 void FaceRecognition(
     const std::string& filename,
     const std::vector<std::string>& names,
